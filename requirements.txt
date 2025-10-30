@@ -1,0 +1,9 @@
+requests
+pandas
+matplotlib
+ta
+PyQt5
+numpy
+cryptocompare
+scipy
+PyQtChart
