@@ -1,0 +1,128 @@
+2025-11-01 19:35:33,805 - core.app - INFO - ✅ برنامه TradeBot Pro با موفقیت راه‌اندازی شد
+2025-11-01 19:35:39,153 - controllers.analysis_controller - INFO - شروع تحلیل برای طلا (XAUUSD) از MetaTrader5
+2025-11-01 19:35:39,154 - data.data_fetcher - INFO - دریافت داده برای XAUUSD از MT5 با تایم‌فریم ۱ ساعت
+2025-11-01 19:35:39,154 - data.data_fetcher - INFO - دریافت داده MT5 برای XAUUSD با تایم‌فریم H1
+2025-11-01 19:35:39,197 - data.mt5_data - INFO - ✅ دریافت 100 کندل برای XAUUSD (H1)
+2025-11-01 19:35:39,206 - controllers.analysis_controller - INFO - تحلیل با موفقیت انجام شد. سیگنال: HOLD
+2025-11-01 19:35:39,207 - data.data_fetcher - INFO - دریافت قیمت لحظه‌ای برای XAUUSD از MetaTrader5
+2025-11-01 19:35:39,208 - controllers.data_controller - ERROR - خطا در دریافت قیمت برای XAUUSD: No module named 'utils.sample_data'
+2025-11-01 19:44:27,812 - core.app - INFO - ✅ برنامه TradeBot Pro با موفقیت راه‌اندازی شد
+2025-11-01 19:44:30,231 - controllers.analysis_controller - INFO - شروع تحلیل برای طلا (XAUUSD) از MetaTrader5
+2025-11-01 19:44:30,232 - data.data_fetcher - INFO - دریافت داده برای XAUUSD از MT5 با تایم‌فریم ۱ ساعت
+2025-11-01 19:44:30,232 - data.data_fetcher - INFO - دریافت داده MT5 برای XAUUSD با تایم‌فریم H1
+2025-11-01 19:44:30,233 - data.mt5_data - INFO - Symbol XAUUSD is available in MT5
+2025-11-01 19:44:30,233 - data.mt5_data - INFO - Requesting 100 candles for XAUUSD with timeframe H1
+2025-11-01 19:44:30,246 - data.mt5_data - INFO - ✅ دریافت 100 کندل برای XAUUSD (H1) - آخرین قیمت: 4002.1400
+2025-11-01 19:44:30,255 - controllers.analysis_controller - INFO - تحلیل با موفقیت انجام شد. سیگنال: HOLD
+2025-11-01 19:44:30,255 - data.data_fetcher - INFO - دریافت قیمت لحظه‌ای برای XAUUSD از MetaTrader5
+2025-11-01 19:44:30,256 - controllers.data_controller - ERROR - خطا در دریافت قیمت برای XAUUSD: نمی‌توان قیمت لحظه‌ای برای XAUUSD دریافت کرد
+2025-11-01 19:44:40,592 - controllers.analysis_controller - INFO - شروع تحلیل برای طلا (XAUUSD) از MetaTrader5
+2025-11-01 19:44:40,593 - data.data_fetcher - INFO - دریافت داده برای XAUUSD از MT5 با تایم‌فریم ۱ هفته
+2025-11-01 19:44:40,593 - data.data_fetcher - INFO - دریافت داده MT5 برای XAUUSD با تایم‌فریم W1
+2025-11-01 19:44:40,593 - data.mt5_data - INFO - Symbol XAUUSD is available in MT5
+2025-11-01 19:44:40,593 - data.mt5_data - INFO - Requesting 100 candles for XAUUSD with timeframe W1
+2025-11-01 19:44:44,915 - data.mt5_data - INFO - ✅ دریافت 100 کندل برای XAUUSD (W1) - آخرین قیمت: 4002.1400
+2025-11-01 19:44:44,919 - controllers.analysis_controller - INFO - تحلیل با موفقیت انجام شد. سیگنال: HOLD
+2025-11-01 19:44:44,919 - data.data_fetcher - INFO - دریافت قیمت لحظه‌ای برای XAUUSD از MetaTrader5
+2025-11-01 19:44:44,920 - controllers.data_controller - ERROR - خطا در دریافت قیمت برای XAUUSD: نمی‌توان قیمت لحظه‌ای برای XAUUSD دریافت کرد
+2025-11-01 19:45:15,367 - data.mt5_data - INFO - ✅ MT5 connected successfully
+2025-11-01 19:45:15,368 - data.mt5_data - INFO - MT5 version: (500, 5370, '17 Oct 2025')
+2025-11-01 19:45:26,119 - core.app - INFO - ✅ برنامه TradeBot Pro با موفقیت راه‌اندازی شد
+2025-11-01 19:45:47,777 - controllers.analysis_controller - INFO - شروع تحلیل برای نقره (XAGUSD) از MetaTrader5
+2025-11-01 19:45:47,777 - data.data_fetcher - INFO - دریافت داده برای XAGUSD از MT5 با تایم‌فریم ۴ ساعت
+2025-11-01 19:45:47,778 - data.data_fetcher - INFO - دریافت داده MT5 برای XAGUSD با تایم‌فریم H4
+2025-11-01 19:45:47,778 - data.mt5_data - INFO - Selecting symbol XAGUSD in MT5...
+2025-11-01 19:45:47,779 - data.mt5_data - INFO - Symbol XAGUSD is available in MT5
+2025-11-01 19:45:47,779 - data.mt5_data - INFO - Requesting 100 candles for XAGUSD with timeframe H4
+2025-11-01 19:45:48,366 - data.mt5_data - INFO - ✅ دریافت 100 کندل برای XAGUSD (H4) - آخرین قیمت: 48.6320
+2025-11-01 19:45:48,371 - controllers.analysis_controller - INFO - تحلیل با موفقیت انجام شد. سیگنال: HOLD
+2025-11-01 19:45:48,371 - data.data_fetcher - INFO - دریافت قیمت لحظه‌ای برای XAGUSD از MetaTrader5
+2025-11-01 19:45:48,372 - controllers.data_controller - ERROR - خطا در دریافت قیمت برای XAGUSD: نمی‌توان قیمت لحظه‌ای برای XAGUSD دریافت کرد
+2025-11-01 19:47:25,274 - controllers.analysis_controller - INFO - شروع تحلیل برای نقره (XAGUSD) از MetaTrader5
+2025-11-01 19:47:25,274 - data.data_fetcher - INFO - دریافت داده برای XAGUSD از MT5 با تایم‌فریم ۱ هفته
+2025-11-01 19:47:25,275 - data.data_fetcher - INFO - دریافت داده MT5 برای XAGUSD با تایم‌فریم W1
+2025-11-01 19:47:25,275 - data.mt5_data - INFO - Symbol XAGUSD is available in MT5
+2025-11-01 19:47:25,276 - data.mt5_data - INFO - Requesting 100 candles for XAGUSD with timeframe W1
+2025-11-01 19:47:30,449 - data.mt5_data - INFO - ✅ دریافت 100 کندل برای XAGUSD (W1) - آخرین قیمت: 48.6320
+2025-11-01 19:47:30,454 - controllers.analysis_controller - INFO - تحلیل با موفقیت انجام شد. سیگنال: HOLD
+2025-11-01 19:47:30,454 - data.data_fetcher - INFO - دریافت قیمت لحظه‌ای برای XAGUSD از MetaTrader5
+2025-11-01 19:47:30,454 - controllers.data_controller - ERROR - خطا در دریافت قیمت برای XAGUSD: نمی‌توان قیمت لحظه‌ای برای XAGUSD دریافت کرد
+2025-11-01 20:01:25,583 - core.app - INFO - ✅ برنامه TradeBot Pro با موفقیت راه‌اندازی شد
+2025-11-01 20:01:27,542 - controllers.analysis_controller - INFO - شروع تحلیل برای طلا (XAUUSD) از MetaTrader5
+2025-11-01 20:01:27,542 - data.data_fetcher - INFO - دریافت داده برای XAUUSD از MT5 با تایم‌فریم ۱ ساعت
+2025-11-01 20:01:27,542 - data.data_fetcher - INFO - 📥 دریافت داده MT5 برای XAUUSD با تایم‌فریم H1
+2025-11-01 20:01:27,543 - data.data_fetcher - INFO - 🔍 Attempting to fetch MT5 data for XAUUSD...
+2025-11-01 20:01:27,543 - data.mt5_data - INFO - 📥 Fetching market data for XAUUSD, timeframe: H1, count: 100
+2025-11-01 20:01:27,544 - data.mt5_data - INFO - ✅ Symbol XAUUSD is available in MT5
+2025-11-01 20:01:27,545 - data.mt5_data - INFO - 📊 Symbol info - Bid: 4002.14, Ask: 4002.64
+2025-11-01 20:01:27,545 - data.mt5_data - INFO - 📊 Requesting 100 candles for XAUUSD with timeframe 16385
+2025-11-01 20:01:27,597 - data.mt5_data - INFO - 📈 Raw data received: 100 rows
+2025-11-01 20:01:27,600 - data.mt5_data - INFO - ✅ دریافت 100 کندل برای XAUUSD (H1)
+2025-11-01 20:01:27,601 - data.mt5_data - INFO - 💰 آخرین قیمت: 4002.1400
+2025-11-01 20:01:27,602 - data.data_fetcher - INFO - ✅ داده MT5 برای XAUUSD دریافت شد: 100 کندل
+2025-11-01 20:01:27,602 - data.data_fetcher - INFO - 💰 آخرین قیمت: 4002.14
+2025-11-01 20:01:27,608 - controllers.analysis_controller - INFO - تحلیل با موفقیت انجام شد. سیگنال: HOLD
+2025-11-01 20:01:27,608 - data.data_fetcher - INFO - دریافت قیمت لحظه‌ای برای XAUUSD از MetaTrader5
+2025-11-01 20:01:27,608 - controllers.data_controller - ERROR - خطا در دریافت قیمت برای XAUUSD: نمی‌توان قیمت لحظه‌ای برای XAUUSD دریافت کرد
+2025-11-01 20:01:33,159 - controllers.analysis_controller - INFO - شروع تحلیل برای طلا (XAUUSD) از MetaTrader5
+2025-11-01 20:01:33,159 - data.data_fetcher - INFO - دریافت داده برای XAUUSD از MT5 با تایم‌فریم ۱ روز
+2025-11-01 20:01:33,160 - data.data_fetcher - INFO - 📥 دریافت داده MT5 برای XAUUSD با تایم‌فریم D1
+2025-11-01 20:01:33,160 - data.data_fetcher - INFO - 🔍 Attempting to fetch MT5 data for XAUUSD...
+2025-11-01 20:01:33,161 - data.mt5_data - INFO - 📥 Fetching market data for XAUUSD, timeframe: D1, count: 100
+2025-11-01 20:01:33,162 - data.mt5_data - INFO - ✅ Symbol XAUUSD is available in MT5
+2025-11-01 20:01:33,163 - data.mt5_data - INFO - 📊 Symbol info - Bid: 4002.14, Ask: 4002.64
+2025-11-01 20:01:33,163 - data.mt5_data - INFO - 📊 Requesting 100 candles for XAUUSD with timeframe 16408
+2025-11-01 20:01:33,202 - data.mt5_data - INFO - 📈 Raw data received: 100 rows
+2025-11-01 20:01:33,204 - data.mt5_data - INFO - ✅ دریافت 100 کندل برای XAUUSD (D1)
+2025-11-01 20:01:33,205 - data.mt5_data - INFO - 💰 آخرین قیمت: 4002.1400
+2025-11-01 20:01:33,206 - data.data_fetcher - INFO - ✅ داده MT5 برای XAUUSD دریافت شد: 100 کندل
+2025-11-01 20:01:33,206 - data.data_fetcher - INFO - 💰 آخرین قیمت: 4002.14
+2025-11-01 20:01:33,210 - controllers.analysis_controller - INFO - تحلیل با موفقیت انجام شد. سیگنال: HOLD
+2025-11-01 20:01:33,210 - data.data_fetcher - INFO - دریافت قیمت لحظه‌ای برای XAUUSD از MetaTrader5
+2025-11-01 20:01:33,211 - controllers.data_controller - ERROR - خطا در دریافت قیمت برای XAUUSD: نمی‌توان قیمت لحظه‌ای برای XAUUSD دریافت کرد
+2025-11-01 20:06:08,043 - core.app - INFO - ✅ برنامه TradeBot Pro با موفقیت راه‌اندازی شد
+2025-11-01 20:06:10,437 - controllers.analysis_controller - INFO - شروع تحلیل برای طلا (XAUUSD) از MetaTrader5
+2025-11-01 20:06:10,438 - data.data_fetcher - INFO - دریافت داده برای XAUUSD از MT5 با تایم‌فریم ۱ ساعت
+2025-11-01 20:06:10,438 - data.data_fetcher - INFO - 📥 دریافت داده MT5 برای XAUUSD با تایم‌فریم H1
+2025-11-01 20:06:10,438 - data.data_fetcher - INFO - 🔍 Attempting to fetch MT5 data for XAUUSD...
+2025-11-01 20:06:10,438 - data.mt5_data - INFO - 📥 Fetching market data for XAUUSD, timeframe: H1, count: 100
+2025-11-01 20:06:10,439 - data.mt5_data - INFO - ✅ Symbol XAUUSD is available in MT5
+2025-11-01 20:06:10,439 - data.mt5_data - INFO - 📊 Requesting 100 candles for XAUUSD with timeframe 16385
+2025-11-01 20:06:10,440 - data.mt5_data - INFO - 📈 Raw data received: 100 rows
+2025-11-01 20:06:10,442 - data.mt5_data - INFO - ✅ دریافت 100 کندل برای XAUUSD (H1)
+2025-11-01 20:06:10,443 - data.mt5_data - INFO - 💰 آخرین قیمت: 4002.1400
+2025-11-01 20:06:10,444 - data.data_fetcher - INFO - ✅ داده MT5 برای XAUUSD دریافت شد: 100 کندل
+2025-11-01 20:06:10,444 - data.data_fetcher - INFO - 💰 آخرین قیمت: 4002.14
+2025-11-01 20:06:10,450 - controllers.analysis_controller - INFO - تحلیل با موفقیت انجام شد. سیگنال: HOLD
+2025-11-01 20:06:10,451 - data.data_fetcher - INFO - دریافت قیمت لحظه‌ای برای XAUUSD از MetaTrader5
+2025-11-01 20:06:10,452 - controllers.data_controller - ERROR - خطا در دریافت قیمت برای XAUUSD: نمی‌توان قیمت لحظه‌ای برای XAUUSD دریافت کرد
+2025-11-01 20:06:16,453 - controllers.analysis_controller - INFO - شروع تحلیل برای طلا (XAUUSD) از MetaTrader5
+2025-11-01 20:06:16,454 - data.data_fetcher - INFO - دریافت داده برای XAUUSD از MT5 با تایم‌فریم ۴ ساعت
+2025-11-01 20:06:16,454 - data.data_fetcher - INFO - 📥 دریافت داده MT5 برای XAUUSD با تایم‌فریم H4
+2025-11-01 20:06:16,455 - data.data_fetcher - INFO - 🔍 Attempting to fetch MT5 data for XAUUSD...
+2025-11-01 20:06:16,456 - data.mt5_data - INFO - 📥 Fetching market data for XAUUSD, timeframe: H4, count: 100
+2025-11-01 20:06:16,456 - data.mt5_data - INFO - ✅ Symbol XAUUSD is available in MT5
+2025-11-01 20:06:16,457 - data.mt5_data - INFO - 📊 Requesting 100 candles for XAUUSD with timeframe 16388
+2025-11-01 20:06:16,514 - data.mt5_data - INFO - 📈 Raw data received: 100 rows
+2025-11-01 20:06:16,516 - data.mt5_data - INFO - ✅ دریافت 100 کندل برای XAUUSD (H4)
+2025-11-01 20:06:16,517 - data.mt5_data - INFO - 💰 آخرین قیمت: 4002.1400
+2025-11-01 20:06:16,517 - data.data_fetcher - INFO - ✅ داده MT5 برای XAUUSD دریافت شد: 100 کندل
+2025-11-01 20:06:16,518 - data.data_fetcher - INFO - 💰 آخرین قیمت: 4002.14
+2025-11-01 20:06:16,522 - controllers.analysis_controller - INFO - تحلیل با موفقیت انجام شد. سیگنال: HOLD
+2025-11-01 20:06:16,522 - data.data_fetcher - INFO - دریافت قیمت لحظه‌ای برای XAUUSD از MetaTrader5
+2025-11-01 20:06:16,523 - controllers.data_controller - ERROR - خطا در دریافت قیمت برای XAUUSD: نمی‌توان قیمت لحظه‌ای برای XAUUSD دریافت کرد
+2025-11-01 20:08:10,558 - controllers.analysis_controller - INFO - شروع تحلیل برای نقره (XAGUSD) از MetaTrader5
+2025-11-01 20:08:10,558 - data.data_fetcher - INFO - دریافت داده برای XAGUSD از MT5 با تایم‌فریم ۴ ساعت
+2025-11-01 20:08:10,559 - data.data_fetcher - INFO - 📥 دریافت داده MT5 برای XAGUSD با تایم‌فریم H4
+2025-11-01 20:08:10,559 - data.data_fetcher - INFO - 🔍 Attempting to fetch MT5 data for XAGUSD...
+2025-11-01 20:08:10,560 - data.mt5_data - INFO - 📥 Fetching market data for XAGUSD, timeframe: H4, count: 100
+2025-11-01 20:08:10,560 - data.mt5_data - INFO - ✅ Symbol XAGUSD is available in MT5
+2025-11-01 20:08:10,561 - data.mt5_data - INFO - 📊 Requesting 100 candles for XAGUSD with timeframe 16388
+2025-11-01 20:08:10,602 - data.mt5_data - INFO - 📈 Raw data received: 100 rows
+2025-11-01 20:08:10,604 - data.mt5_data - INFO - ✅ دریافت 100 کندل برای XAGUSD (H4)
+2025-11-01 20:08:10,604 - data.mt5_data - INFO - 💰 آخرین قیمت: 48.6320
+2025-11-01 20:08:10,605 - data.data_fetcher - INFO - ✅ داده MT5 برای XAGUSD دریافت شد: 100 کندل
+2025-11-01 20:08:10,605 - data.data_fetcher - INFO - 💰 آخرین قیمت: 48.632
+2025-11-01 20:08:10,609 - controllers.analysis_controller - INFO - تحلیل با موفقیت انجام شد. سیگنال: HOLD
+2025-11-01 20:08:10,609 - data.data_fetcher - INFO - دریافت قیمت لحظه‌ای برای XAGUSD از MetaTrader5
+2025-11-01 20:08:10,610 - controllers.data_controller - ERROR - خطا در دریافت قیمت برای XAGUSD: نمی‌توان قیمت لحظه‌ای برای XAGUSD دریافت کرد
