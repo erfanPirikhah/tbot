@@ -7,3 +7,4 @@ numpy
 cryptocompare
 scipy
 PyQtChart
+MetaTrader5

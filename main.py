@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-TradeBot Pro - نرم افزار تحلیل پیشرفته بازار ارزهای دیجیتال
-نسخه: ۲.۰.۰
+TradeBot Pro - نرم افزار تحلیل پیشرفته بازار ارزهای دیجیتال و فارکس
+نسخه: ۳.۰.۰
 توسعه دهنده: تیم تحلیل بازار
 """
 
@@ -20,16 +20,7 @@ from PyQt5.QtGui import QFont, QColor, QFontDatabase, QIcon, QPalette
 from PyQt5.QtChart import QChart, QChartView, QLineSeries, QValueAxis, QDateTimeAxis
 import pandas as pd
 import numpy as np
-
-# ماژول‌های داخلی پروژه
-from data.data_fetcher import fetch_market_data, set_cryptocompare_api_key, get_current_price
-from indicators.rsi import calculate_rsi
-from indicators.moving_averages import calculate_moving_averages
-from strategies.improved_advanced_rsi_strategy import ImprovedAdvancedRsiStrategy, PositionType, SignalStrength
-from utils.plot_chart import plot_price_and_rsi
-from config import (DEFAULT_SYMBOL, DEFAULT_INTERVAL, RSI_PERIOD, 
-                   CRYPTOCOMPARE_SYMBOL_MAP, CRYPTOCOMPARE_INTERVAL_MAP,
-                   CRYPTOCOMPARE_API_KEY, IMPROVED_STRATEGY_PARAMS)
+from utils.mt5_connection_helper import MT5ConnectionHelper
 
 # تنظیمات پیشرفته لاگینگ
 logging.basicConfig(
@@ -41,6 +32,29 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+
+# ماژول‌های داخلی پروژه
+from data.data_fetcher import fetch_market_data, set_cryptocompare_api_key, get_current_price
+
+# ایمپورت MT5 با مدیریت خطا
+try:
+    from data.mt5_data import mt5_fetcher, MT5_AVAILABLE
+    if not MT5_AVAILABLE:
+        logging.warning("MetaTrader5 is not available. Install it with: pip install MetaTrader5")
+except ImportError as e:
+    logging.warning(f"Could not import MT5 modules: {e}")
+    MT5_AVAILABLE = False
+    mt5_fetcher = None
+
+from indicators.rsi import calculate_rsi
+from indicators.moving_averages import calculate_moving_averages
+from strategies.improved_advanced_rsi_strategy import ImprovedAdvancedRsiStrategy, PositionType, SignalStrength
+from utils.plot_chart import plot_price_and_rsi
+from config import (DEFAULT_SYMBOL, DEFAULT_INTERVAL, RSI_PERIOD, 
+                   CRYPTOCOMPARE_SYMBOL_MAP, CRYPTOCOMPARE_INTERVAL_MAP,
+                   MT5_SYMBOL_MAP, MT5_INTERVAL_MAP, ALL_SYMBOL_MAP,
+                   CRYPTOCOMPARE_API_KEY, IMPROVED_STRATEGY_PARAMS,
+                   RSI_OVERSOLD, RSI_OVERBOUGHT)
 
 class ApiKeyDialog(QDialog):
     """دیالوگ تنظیم کلید API"""
@@ -81,6 +95,99 @@ class ApiKeyDialog(QDialog):
         
     def get_api_key(self):
         return self.api_key_input.text().strip()
+
+class MT5SettingsDialog(QDialog):
+    """دیالوگ تنظیمات اتصال به MetaTrader5"""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("🖥️ تنظیمات اتصال به MetaTrader5")
+        self.setLayoutDirection(Qt.RightToLeft)
+        self.setMinimumWidth(500)
+        self.setup_ui()
+        
+    def setup_ui(self):
+        layout = QFormLayout(self)
+        layout.setLabelAlignment(Qt.AlignRight)
+        
+        # توضیحات
+        description = QLabel("برای اتصال به MetaTrader5، لطفاً مطمئن شوید که متاتریدر روی سیستم شما نصب و اجرا است.")
+        description.setWordWrap(True)
+        description.setStyleSheet("color: #888; font-size: 11px; padding: 10px;")
+        layout.addRow(description)
+        
+        # وضعیت اتصال
+        self.connection_status = QLabel("در حال بررسی اتصال...")
+        self.connection_status.setStyleSheet("color: #FF9800; font-weight: bold;")
+        layout.addRow("وضعیت اتصال:", self.connection_status)
+        
+        # اطلاعات سرور
+        self.server_input = QLineEdit()
+        self.server_input.setPlaceholderText("خالی بگذارید برای استفاده از پیشفرض")
+        layout.addRow("سرور:", self.server_input)
+        
+        self.login_input = QLineEdit()
+        self.login_input.setPlaceholderText("شماره حساب (اختیاری)")
+        layout.addRow("شماره حساب:", self.login_input)
+        
+        self.password_input = QLineEdit()
+        self.password_input.setPlaceholderText("رمز (اختیاری)")
+        self.password_input.setEchoMode(QLineEdit.Password)
+        layout.addRow("رمز:", self.password_input)
+        
+        # دکمه تست اتصال
+        self.test_btn = QPushButton("🔗 تست اتصال")
+        self.test_btn.clicked.connect(self.test_connection)
+        layout.addRow(self.test_btn)
+        
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        
+        buttons.button(QDialogButtonBox.Ok).setText("تأیید")
+        buttons.button(QDialogButtonBox.Cancel).setText("انصراف")
+        
+        layout.addRow(buttons)
+        
+        # بررسی اولیه اتصال
+        self.check_initial_connection()
+        
+    def check_initial_connection(self):
+        """بررسی وضعیت اولیه اتصال"""
+        if MT5_AVAILABLE and mt5_fetcher and mt5_fetcher.connected:
+            self.connection_status.setText("✅ متصل")
+            self.connection_status.setStyleSheet("color: #4CAF50; font-weight: bold;")
+        else:
+            self.connection_status.setText("❌ قطع")
+            self.connection_status.setStyleSheet("color: #F44336; font-weight: bold;")
+    
+    def test_connection(self):
+        """تست اتصال به MT5"""
+        try:
+            self.test_btn.setEnabled(False)
+            self.test_btn.setText("🔗 در حال اتصال...")
+            
+            if not MT5_AVAILABLE:
+                QMessageBox.warning(self, "خطا", "MetaTrader5 نصب نیست. لطفاً با دستور 'pip install MetaTrader5' نصب کنید.")
+                return
+                
+            # تلاش برای اتصال مجدد
+            if mt5_fetcher.initialize_mt5():
+                self.connection_status.setText("✅ متصل")
+                self.connection_status.setStyleSheet("color: #4CAF50; font-weight: bold;")
+                QMessageBox.information(self, "موفقیت", "اتصال به MetaTrader5 با موفقیت برقرار شد")
+            else:
+                self.connection_status.setText("❌ قطع")
+                self.connection_status.setStyleSheet("color: #F44336; font-weight: bold;")
+                QMessageBox.warning(self, "خطا", "اتصال به MetaTrader5 برقرار نشد. لطفاً مطمئن شوید که متاتریدر اجرا است.")
+                
+        except Exception as e:
+            self.connection_status.setText("❌ خطا")
+            self.connection_status.setStyleSheet("color: #F44336; font-weight: bold;")
+            QMessageBox.critical(self, "خطا", f"خطا در اتصال: {str(e)}")
+        finally:
+            self.test_btn.setEnabled(True)
+            self.test_btn.setText("🔗 تست اتصال")
 
 class ModernProgressBar(QWidget):
     """نوار پیشرفت مدرن"""
@@ -602,7 +709,7 @@ class MainWindow(QMainWindow):
         
     def init_ui(self):
         """راه‌اندازی رابط کاربری"""
-        self.setWindowTitle("TradeBot Pro - نرم افزار تحلیل پیشرفته بازار")
+        self.setWindowTitle("TradeBot Pro - نرم افزار تحلیل پیشرفته بازار ارزهای دیجیتال و فارکس")
         self.setGeometry(100, 50, 1600, 1000)
         self.setLayoutDirection(Qt.RightToLeft)
         
@@ -617,7 +724,7 @@ class MainWindow(QMainWindow):
         
     def init_data(self):
         """راه‌اندازی داده‌ها و استراتژی"""
-        self.settings = QSettings("TradeBotPro", "v2")
+        self.settings = QSettings("TradeBotPro", "v3")
         self.api_key = self.settings.value("api_key", CRYPTOCOMPARE_API_KEY)
         
         # استراتژی
@@ -627,6 +734,9 @@ class MainWindow(QMainWindow):
         self.analysis_count = 0
         self.current_price = 0.0
         self.auto_update_enabled = False
+        
+        # بررسی وضعیت MT5
+        self.check_mt5_status()
         
         # تایمرهای خودکار
         self.setup_timers()
@@ -640,6 +750,7 @@ class MainWindow(QMainWindow):
         self.analyze_btn.clicked.connect(self.analyze_market)
         self.chart_btn.clicked.connect(self.show_chart)
         self.api_key_btn.clicked.connect(self.show_api_key_dialog)
+        self.mt5_settings_btn.clicked.connect(self.show_mt5_settings_dialog)
         self.settings_btn.clicked.connect(self.show_settings_dialog)
         self.help_btn.clicked.connect(self.show_help)
         self.auto_update_btn.clicked.connect(self.toggle_auto_update)
@@ -648,10 +759,15 @@ class MainWindow(QMainWindow):
         self.exit_action.triggered.connect(self.close)
         self.analyze_action.triggered.connect(self.analyze_market)
         self.chart_action.triggered.connect(self.show_chart)
+        self.mt5_settings_action.triggered.connect(self.show_mt5_settings_dialog)
+        
+        # کنترل‌های داده
+        self.data_source_combo.currentTextChanged.connect(self.on_data_source_changed)
         
         # تنظیمات استراتژی
         self.settings_tab.apply_btn.clicked.connect(self.apply_strategy_settings)
-        self.settings_tab.reset_btn.clicked.connect(self.reset_strategy_settings)        
+        self.settings_tab.reset_btn.clicked.connect(self.reset_strategy_settings)
+        
     def setup_central_widget(self):
         """تنظیم ویجت مرکزی"""
         central_widget = QWidget()
@@ -683,47 +799,88 @@ class MainWindow(QMainWindow):
     def setup_top_toolbar(self, layout):
         """نوار ابزار بالایی"""
         toolbar = QWidget()
-        toolbar.setFixedHeight(60)
+        toolbar.setFixedHeight(80)
         toolbar_layout = QHBoxLayout(toolbar)
         toolbar_layout.setContentsMargins(10, 5, 10, 5)
         
         # عنوان و لوگو
-        title = QLabel("💎 TradeBot Pro")
+        title = QLabel("💎 TradeBot Pro - نسخه چندمنبعی")
         title.setFont(FontManager.get_font(size=16, bold=True))
         title.setStyleSheet("color: #2196F3;")
         
         # کنترل‌های سریع
         quick_controls = QWidget()
-        quick_layout = QHBoxLayout(quick_controls)
+        quick_layout = QGridLayout(quick_controls)
+        quick_layout.setVerticalSpacing(5)
         
+        # ردیف اول: انتخاب منبع داده
+        quick_layout.addWidget(QLabel("منبع داده:"), 0, 0)
+        self.data_source_combo = QComboBox()
+        self.data_source_combo.addItems(["MetaTrader5", "CryptoCompare"])
+        self.data_source_combo.setCurrentText("MetaTrader5")
+        self.data_source_combo.setMinimumWidth(120)
+        quick_layout.addWidget(self.data_source_combo, 0, 1)
+        
+        # ردیف دوم: نماد و تایم‌فریم
+        quick_layout.addWidget(QLabel("نماد:"), 1, 0)
         self.symbol_combo = QComboBox()
-        self.symbol_combo.addItems(list(CRYPTOCOMPARE_SYMBOL_MAP.keys()))
-        self.symbol_combo.setCurrentText(DEFAULT_SYMBOL)
+        self.update_symbols_list()
         self.symbol_combo.setMinimumWidth(150)
+        quick_layout.addWidget(self.symbol_combo, 1, 1)
         
+        quick_layout.addWidget(QLabel("تایم‌فریم:"), 1, 2)
         self.interval_combo = QComboBox()
-        self.interval_combo.addItems(list(CRYPTOCOMPARE_INTERVAL_MAP.keys()))
-        self.interval_combo.setCurrentText(DEFAULT_INTERVAL)
+        self.update_intervals_list()
+        quick_layout.addWidget(self.interval_combo, 1, 3)
         
+        # دکمه‌های عمل
         self.analyze_btn = QPushButton("🚀 تحلیل بازار")
         self.analyze_btn.setMinimumHeight(35)
+        quick_layout.addWidget(self.analyze_btn, 0, 4, 2, 1)
         
         self.chart_btn = QPushButton("📊 نمایش نمودار")
         self.chart_btn.setMinimumHeight(35)
         self.chart_btn.setEnabled(False)
-        
-        quick_layout.addWidget(QLabel("ارز:"))
-        quick_layout.addWidget(self.symbol_combo)
-        quick_layout.addWidget(QLabel("تایم‌فریم:"))
-        quick_layout.addWidget(self.interval_combo)
-        quick_layout.addWidget(self.analyze_btn)
-        quick_layout.addWidget(self.chart_btn)
-        quick_layout.addStretch()
+        quick_layout.addWidget(self.chart_btn, 0, 5, 2, 1)
         
         toolbar_layout.addWidget(title)
         toolbar_layout.addWidget(quick_controls)
         
         layout.addWidget(toolbar)
+        
+    def update_symbols_list(self):
+        """به‌روزرسانی لیست نمادها بر اساس منبع داده انتخاب شده"""
+        self.symbol_combo.clear()
+        
+        data_source = self.data_source_combo.currentText()
+        if data_source == "MetaTrader5":
+            symbols = list(MT5_SYMBOL_MAP.keys())
+            default_symbol = "طلا (XAUUSD)"
+        else:
+            symbols = list(CRYPTOCOMPARE_SYMBOL_MAP.keys())
+            default_symbol = "بیت‌کوین (BTC)"
+        
+        self.symbol_combo.addItems(symbols)
+        self.symbol_combo.setCurrentText(default_symbol)
+    
+    def update_intervals_list(self):
+        """به‌روزرسانی لیست تایم‌فریم‌ها بر اساس منبع داده"""
+        self.interval_combo.clear()
+        
+        data_source = self.data_source_combo.currentText()
+        if data_source == "MetaTrader5":
+            intervals = list(MT5_INTERVAL_MAP.keys())
+        else:
+            intervals = list(CRYPTOCOMPARE_INTERVAL_MAP.keys())
+        
+        self.interval_combo.addItems(intervals)
+        self.interval_combo.setCurrentText("۱ ساعت")
+    
+    def on_data_source_changed(self):
+        """هنگام تغییر منبع داده"""
+        self.update_symbols_list()
+        self.update_intervals_list()
+        self.log_message(f"🔁 تغییر منبع داده به: {self.data_source_combo.currentText()}")
         
     def create_left_panel(self):
         """ایجاد پنل سمت چپ"""
@@ -750,13 +907,15 @@ class MainWindow(QMainWindow):
         
         self.auto_update_btn = QPushButton("⏰ بروزرسانی خودکار: خاموش")
         self.api_key_btn = QPushButton("🔑 تنظیم API")
+        self.mt5_settings_btn = QPushButton("🖥️ تنظیمات MT5")
         self.settings_btn = QPushButton("⚙️ تنظیمات پیشرفته")
         self.help_btn = QPushButton("❓ راهنما")
         
         control_layout.addWidget(self.auto_update_btn, 0, 0)
         control_layout.addWidget(self.api_key_btn, 0, 1)
-        control_layout.addWidget(self.settings_btn, 1, 0)
-        control_layout.addWidget(self.help_btn, 1, 1)
+        control_layout.addWidget(self.mt5_settings_btn, 1, 0)
+        control_layout.addWidget(self.settings_btn, 1, 1)
+        control_layout.addWidget(self.help_btn, 2, 0, 1, 2)
         
         layout.addWidget(control_widget)
         layout.addStretch()
@@ -833,13 +992,26 @@ class MainWindow(QMainWindow):
         
         self.log_text = RightAlignedTextEdit()
         self.log_text.setFont(FontManager.get_font("Consolas", 9))
-        self.log_text.setPlainText(
-            "📋 گزارش فعالیت TradeBot Pro\n" +
-            "="*50 + "\n" +
-            f"🚀 برنامه در تاریخ {datetime.now().strftime('%Y/%m/%d %H:%M')} راه‌اندازی شد\n" +
-            "✅ سیستم آماده به کار است\n" +
-            "="*50 + "\n"
-        )
+        
+        # پیام راه‌اندازی
+        mt5_status = "✅ فعال" if MT5_AVAILABLE and mt5_fetcher and mt5_fetcher.connected else "❌ غیرفعال"
+        startup_info = f"""
+📋 گزارش فعالیت TradeBot Pro نسخه ۳.۰.۰
+{"="*60}
+🚀 برنامه در تاریخ {datetime.now().strftime('%Y/%m/%d %H:%M')} راه‌اندازی شد
+✅ سیستم آماده به کار است
+
+💽 منابع داده:
+  • MetaTrader5: {mt5_status}
+  • CryptoCompare: ✅ فعال
+
+📊 نمادهای پشتیبانی شده:
+  • {len(MT5_SYMBOL_MAP)} نماد فارکس و طلا
+  • {len(CRYPTOCOMPARE_SYMBOL_MAP)} نماد ارز دیجیتال
+
+{"="*60}
+"""
+        self.log_text.setPlainText(startup_info)
         
         layout.addWidget(self.log_text)
         return widget
@@ -850,13 +1022,26 @@ class MainWindow(QMainWindow):
         self.status_bar.setLayoutDirection(Qt.RightToLeft)
         self.setStatusBar(self.status_bar)
         
+        # وضعیت MT5
+        if MT5_AVAILABLE and mt5_fetcher and mt5_fetcher.connected:
+            mt5_status = "✅ MT5"
+            mt5_style = "color: #4CAF50;"
+        else:
+            mt5_status = "❌ MT5"
+            mt5_style = "color: #F44336;"
+        
+        self.mt5_status_label = QLabel(mt5_status)
+        self.mt5_status_label.setFont(FontManager.get_font(size=9))
+        self.mt5_status_label.setStyleSheet(mt5_style)
+        self.status_bar.addWidget(self.mt5_status_label)
+        
         # برچسب وضعیت
         self.status_label = QLabel("آماده به کار")
         self.status_label.setFont(FontManager.get_font(size=9))
         self.status_bar.addWidget(self.status_label)
         
         # اطلاعات سیستم
-        self.system_info = QLabel(f"ورژن ۲.۰.۰ | توسعه داده شده توسط تیم تحلیل بازار")
+        self.system_info = QLabel(f"ورژن ۳.۰.۰ | توسعه داده شده توسط تیم تحلیل بازار")
         self.system_info.setFont(FontManager.get_font(size=8))
         self.system_info.setStyleSheet("color: #666;")
         self.status_bar.addPermanentWidget(self.system_info)
@@ -884,6 +1069,7 @@ class MainWindow(QMainWindow):
         # منوی تنظیمات
         settings_menu = menubar.addMenu("⚙️ تنظیمات")
         settings_menu.addAction("تنظیمات API")
+        self.mt5_settings_action = settings_menu.addAction("تنظیمات MT5")
         settings_menu.addAction("تنظیمات استراتژی")
         
         # منوی راهنما
@@ -1114,6 +1300,22 @@ class MainWindow(QMainWindow):
             else:
                 QMessageBox.warning(self, "هشدار", "لطفاً یک کلید API معتبر وارد کنید.")
                 
+    def show_mt5_settings_dialog(self):
+        """نمایش دیالوگ تنظیمات MT5"""
+        dialog = MT5SettingsDialog(self)
+        if dialog.exec_() == QDialog.Accepted:
+            # به‌روزرسانی وضعیت MT5 در نوار وضعیت
+            if MT5_AVAILABLE and mt5_fetcher and mt5_fetcher.connected:
+                mt5_status = "✅ MT5"
+                mt5_style = "color: #4CAF50;"
+            else:
+                mt5_status = "❌ MT5"
+                mt5_style = "color: #F44336;"
+            
+            self.mt5_status_label.setText(mt5_status)
+            self.mt5_status_label.setStyleSheet(mt5_style)
+            self.log_message("✅ تنظیمات MT5 به‌روزرسانی شد")
+                
     def log_message(self, message):
         """ثبت پیام در لاگ"""
         timestamp = datetime.now().strftime("%H:%M:%S")
@@ -1129,25 +1331,46 @@ class MainWindow(QMainWindow):
         """تحلیل بازار"""
         try:
             # دریافت تنظیمات
+            data_source = self.data_source_combo.currentText()
             symbol_display = self.symbol_combo.currentText()
             interval_display = self.interval_combo.currentText()
-            symbol = CRYPTOCOMPARE_SYMBOL_MAP[symbol_display]
+            
+            # انتخاب مپ نماد مناسب
+            if data_source == "MetaTrader5":
+                symbol_map = MT5_SYMBOL_MAP
+            else:
+                symbol_map = CRYPTOCOMPARE_SYMBOL_MAP
+            
+            symbol = symbol_map.get(symbol_display)
+            if not symbol:
+                symbol = ALL_SYMBOL_MAP.get(symbol_display)  # fallback
+            
+            if not symbol:
+                raise ValueError(f"نماد {symbol_display} یافت نشد")
             
             # به روزرسانی وضعیت
             self.analyze_btn.setEnabled(False)
-            self.progress.set_value(0, "📡 در حال دریافت داده‌ها از CryptoCompare...")
+            self.progress.set_value(0, f"📡 در حال اتصال به {data_source}...")
             
             # دریافت قیمت لحظه‌ای
-            self.current_price = get_current_price(symbol)
+            self.current_price = get_current_price(symbol, 
+                "MT5" if data_source == "MetaTrader5" else "CRYPTOCOMPARE")
+            
+            if self.current_price == 0:
+                raise ValueError(f"قیمت لحظه‌ای برای {symbol} دریافت نشد")
             
             # دریافت داده‌های تاریخی
-            self.progress.set_value(30, "📊 در حال محاسبه اندیکاتورها...")
-            raw_data = fetch_market_data(symbol, interval_display)
+            self.progress.set_value(30, "📥 در حال دریافت داده‌های تاریخی...")
+            raw_data = fetch_market_data(symbol, interval_display, 
+                                       data_source="MT5" if data_source == "MetaTrader5" else "CRYPTOCOMPARE")
             
-            # محاسبه RSI
+            if raw_data.empty:
+                raise ValueError("داده‌های تاریخی دریافت نشد")
+            
+            # ادامه تحلیل
+            self.progress.set_value(50, "📊 در حال محاسبه اندیکاتورها...")
             data_with_rsi = calculate_rsi(raw_data, period=RSI_PERIOD)
             
-            # تولید سیگنال
             self.progress.set_value(70, "🔍 در حال تحلیل سیگنال...")
             signal_info = self.strategy.generate_signal(data_with_rsi)
             
@@ -1156,11 +1379,11 @@ class MainWindow(QMainWindow):
             
             # نمایش نتایج
             self.progress.set_value(100, "✅ تحلیل با موفقیت انجام شد")
-            self.display_results(signal_info, symbol_display)
+            self.display_results(signal_info, symbol_display, data_source)
             self.update_widgets(signal_info)
             
             self.chart_btn.setEnabled(True)
-            self.log_message(f"✅ تحلیل #{self.analysis_count} برای {symbol_display} انجام شد")
+            self.log_message(f"✅ تحلیل #{self.analysis_count} برای {symbol_display} از {data_source} انجام شد")
             
         except Exception as e:
             error_msg = f"خطا در تحلیل: {str(e)}"
@@ -1171,11 +1394,11 @@ class MainWindow(QMainWindow):
         finally:
             self.analyze_btn.setEnabled(True)
             
-    def display_results(self, signal_info, symbol):
+    def display_results(self, signal_info, symbol, data_source):
         """نمایش نتایج تحلیل"""
         action = signal_info['action']
         reason = signal_info['reason']
-        rsi_val = signal_info['rsi']
+        rsi_val = signal_info.get('rsi', 0)
         
         # رنگ‌بندی بر اساس عمل
         if action == "BUY":
@@ -1239,6 +1462,10 @@ class MainWindow(QMainWindow):
                     padding: 3px 8px;
                     margin: 2px;
                 }}
+                .source {{
+                    color: #2196F3;
+                    font-size: 12px;
+                }}
             </style>
         </head>
         <body>
@@ -1247,7 +1474,10 @@ class MainWindow(QMainWindow):
             <table class='info-table'>
                 <tr>
                     <td class='label'>نماد:</td>
-                    <td class='value'><span class='metric'>{symbol}</span></td>
+                    <td class='value'>
+                        <span class='metric'>{symbol}</span>
+                        <span class='source'> (از {data_source})</span>
+                    </td>
                 </tr>
                 <tr>
                     <td class='label'>موقعیت:</td>
@@ -1438,31 +1668,42 @@ class MainWindow(QMainWindow):
     def show_help(self):
         """نمایش راهنما"""
         help_text = """
-        📖 راهنمای TradeBot Pro
+        📖 راهنمای TradeBot Pro نسخه ۳.۰.۰
         
-        ۱. **تحلیل بازار:**
-           - ارز و تایم‌فریم مورد نظر را انتخاب کنید
+        ۱. **انتخاب منبع داده:**
+           - MetaTrader5: برای تحلیل طلا، جفت‌ارزها، شاخص‌ها
+           - CryptoCompare: برای تحلیل ارزهای دیجیتال
+        
+        ۲. **تحلیل بازار:**
+           - منبع داده، نماد و تایم‌فریم مورد نظر را انتخاب کنید
            - دکمه "تحلیل بازار" را بزنید
            - نتایج در تب "نتایج تحلیل" نمایش داده می‌شود
         
-        ۲. **نمایش نمودار:**
+        ۳. **نمایش نمودار:**
            - پس از تحلیل، دکمه "نمایش نمودار" را بزنید
            - نمودار قیمت و RSI نمایش داده می‌شود
         
-        ۳. **تنظیمات API:**
+        ۴. **تنظیمات MT5:**
+           - مطمئن شوید MetaTrader5 نصب و اجرا است
+           - از منوی تنظیمات، "تنظیمات MT5" را انتخاب کنید
+           - دکمه "تست اتصال" را برای بررسی اتصال بزنید
+        
+        ۵. **تنظیمات API:**
            - به وبسایت cryptocompare.com مراجعه کنید
            - کلید API رایگان دریافت کنید
            - در دیالوگ تنظیمات وارد کنید
         
-        ۴. **تنظیمات استراتژی:**
+        ۶. **تنظیمات استراتژی:**
            - در تب "تنظیمات استراتژی" پارامترها را تغییر دهید
            - دکمه "اعمال تنظیمات" را بزنید
         
-        ۵. **بروزرسانی خودکار:**
+        ۷. **بروزرسانی خودکار:**
            - دکمه "بروزرسانی خودکار" را فعال کنید
            - برنامه هر ۵ دقیقه به صورت خودکار تحلیل می‌کند
         
         ⚠️ نکته مهم: این نرم‌افزار فقط برای تحلیل است و لطفاً برای تصمیم‌گیری نهایی از منابع دیگر نیز استفاده کنید.
+        
+        📞 پشتیبانی: در صورت بروز مشکل با تیم توسعه‌دهنده تماس بگیرید.
         """
         
         QMessageBox.information(self, "راهنما", help_text)
@@ -1526,11 +1767,28 @@ class MainWindow(QMainWindow):
                 QMessageBox.critical(self, "خطا", error_msg)
                 self.log_message(f"❌ {error_msg}")
 
+
+    def check_mt5_status(self):
+        """بررسی وضعیت MT5 و نمایش راهنما اگر نیاز باشد"""
+        mt5_available, mt5_message = MT5ConnectionHelper.check_mt5_requirements()
+        
+        if not mt5_available:
+            self.log_message(f"⚠️ {mt5_message}")
+            
+            # اگر منبع داده روی MT5 است اما در دسترس نیست، به CryptoCompare تغییر دهید
+            if self.data_source_combo.currentText() == "MetaTrader5":
+                self.data_source_combo.setCurrentText("CryptoCompare")
+                self.log_message("🔁 تغییر خودکار منبع داده به CryptoCompare")
+        
+        # اگر MT5 نصب است اما متصل نیست
+        elif MT5_AVAILABLE and (not mt5_fetcher or not mt5_fetcher.connected):
+            self.log_message("⚠️ MT5 نصب است اما متصل نیست. از منوی تنظیمات اتصال را تست کنید.")            
+
 def main():
     """تابع اصلی برنامه"""
     app = QApplication(sys.argv)
     app.setApplicationName("TradeBot Pro")
-    app.setApplicationVersion("2.0.0")
+    app.setApplicationVersion("3.0.0")
     
     # تنظیم فونت برنامه
     FontManager.setup_application_fonts(app)
