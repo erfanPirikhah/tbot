@@ -55,7 +55,7 @@ class Trade:
     pnl_amount: Optional[float] = None
     volatility_regime: str = "NORMAL"
 
-class AdaptiveEliteRsiStrategy:
+class ProfessionalAdvancedRsiStrategy:
     """
     استراتژی RSI Adaptive - نسخه نهایی
     

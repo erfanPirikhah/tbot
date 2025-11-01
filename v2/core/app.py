@@ -48,3 +48,22 @@ class TradeBotApp:
         if self.main_window:
             self.main_window.cleanup()
         logger.info("🛑 برنامه TradeBot Pro خاموش شد")
+
+    def add_backtest_button(self):
+        """Add backtest button to main interface"""
+        # Add backtest button to main interface toolbar or menu
+        backtest_action = QAction("Strategy Backtest", self)
+        backtest_action.triggered.connect(self.open_backtest_dialog)
+        
+        # Add to toolbar
+        self.toolbar.addAction(backtest_action)
+        
+        # Or add to menu
+        # self.tools_menu.addAction(backtest_action)
+
+    def open_backtest_dialog(self):
+        """Open backtest dialog"""
+        from ui.backtest_dialog import BacktestDialog
+        
+        dialog = BacktestDialog(self)
+        dialog.exec_()    

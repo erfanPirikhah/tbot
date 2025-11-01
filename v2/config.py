@@ -102,66 +102,59 @@ IMPROVED_STRATEGY_PARAMS = {
     'max_trade_duration': 72
 }
 
-# Professional Strategy Default Parameters - اضافه شده
-PROFESSIONAL_STRATEGY_PARAMS = {
-    # پارامترهای RSI
-    'overbought': 70,
-    'oversold': 30,
-    'rsi_period': 14,
-    'extreme_overbought': 80,
-    'extreme_oversold': 20,
-    
-    # پارامترهای فیلتر روند
-    'trend_ma_short': 20,
-    'trend_ma_long': 50,
-    'trend_threshold': 0.01,
-    
-    # پارامترهای ADX
-    'use_adx_filter': True,
-    'adx_period': 14,
-    'adx_threshold': 25.0,
-    
-    # پارامترهای تاییدیه
-    'min_signal_score': 7.0,
-    'volume_ma_period': 20,
-    'volume_spike_threshold': 1.5,
-    
-    # پارامترهای مدیریت ریسک
-    'risk_per_trade': 0.02,
-    'stop_loss_atr_multiplier': 2.0,
-    'take_profit_ratio': 2.5,
-    
-    # Trailing Stop پیشرفته
-    'use_trailing_stop': True,
-    'trailing_stop_activation': 1.0,
-    'trailing_stop_distance': 0.5,
-    'use_break_even': True,
-    'break_even_trigger': 1.5,
-    
-    # پارامترهای واگرایی
-    'divergence_lookback': 14,
-    'min_divergence_strength': 0.15,
-    
-    # مدیریت زمان
-    'max_trade_duration': 72,
-    
-    # امکانات پیشرفته
-    'enable_short_trades': True,
-    'use_partial_exits': True,
-    'partial_exit_ratio': 0.5,
-    'partial_exit_target': 2.0,
-    
-    # فیلتر رژیم بازار
-    'min_regime_score': 0.5,
-    'avoid_ranging_markets': True,
-}
-
 # Strategy Selection Map
 STRATEGY_MAP = {
     "استراتژی پیشرفته RSI": "improved",
-    "استراتژی حرفه‌ای RSI": "professional"
+    "استراتژی Adaptive RSI": "professional"  # تغییر نام
 }
 
+
+PROFESSIONAL_STRATEGY_PARAMS = {
+    # پارامترهای پایه RSI
+    'rsi_period': 14,
+    'rsi_base_oversold': 30,
+    'rsi_base_overbought': 70,
+    
+    # Adaptive RSI
+    'use_adaptive_rsi': True,
+    'volatility_lookback': 50,
+    
+    # ADX Adaptive
+    'use_adaptive_adx': True,
+    'adx_period': 14,
+    'adx_base_threshold': 20.0,
+    
+    # Leading Indicators
+    'use_rsi_momentum': True,
+    'use_price_roc': True,
+    'rsi_momentum_period': 5,
+    
+    # مدیریت ریسک Adaptive
+    'risk_per_trade': 0.02,
+    'base_stop_atr_multiplier': 2.0,
+    'base_take_profit_ratio': 2.5,
+    
+    # Volatility Regimes
+    'use_volatility_regimes': True,
+    
+    # Trailing Stop Dynamic
+    'use_dynamic_trailing': True,
+    'base_trailing_activation': 1.2,
+    'base_trailing_distance': 0.8,
+    
+    # Multi-timeframe
+    'use_mtf_confirmation': False,
+    'mtf_factor': 4,
+    
+    # محدودیت‌ها
+    'max_trades_per_100': 30,
+    'min_candles_between': 3,
+    'max_trade_duration': 48,
+    
+    # امکانات
+    'enable_short_trades': True,
+    'use_smart_exits': True,
+}
 # Strategy Parameters Map
 STRATEGY_PARAMS_MAP = {
     "improved": IMPROVED_STRATEGY_PARAMS,
