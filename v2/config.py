@@ -64,6 +64,7 @@ ALL_INTERVAL_MAP = {**CRYPTOCOMPARE_INTERVAL_MAP, **MT5_INTERVAL_MAP}
 DEFAULT_SYMBOL = "طلا (XAUUSD)"  # تغییر به طلا به عنوان پیشفرض
 DEFAULT_INTERVAL = "۱ ساعت"
 DEFAULT_DATA_SOURCE = "MT5"  # MT5 یا CryptoCompare
+DEFAULT_STRATEGY = "professional"  # استراتژی پیشفرض جدید
 
 # تنظیمات MT5
 MT5_SETTINGS = {
@@ -99,4 +100,136 @@ IMPROVED_STRATEGY_PARAMS = {
     'divergence_lookback': 14,
     'min_divergence_strength': 0.2,
     'max_trade_duration': 72
+}
+
+# Professional Strategy Default Parameters - اضافه شده
+PROFESSIONAL_STRATEGY_PARAMS = {
+    # پارامترهای RSI
+    'overbought': 70,
+    'oversold': 30,
+    'rsi_period': 14,
+    'extreme_overbought': 80,
+    'extreme_oversold': 20,
+    
+    # پارامترهای فیلتر روند
+    'trend_ma_short': 20,
+    'trend_ma_long': 50,
+    'trend_threshold': 0.01,
+    
+    # پارامترهای ADX
+    'use_adx_filter': True,
+    'adx_period': 14,
+    'adx_threshold': 25.0,
+    
+    # پارامترهای تاییدیه
+    'min_signal_score': 7.0,
+    'volume_ma_period': 20,
+    'volume_spike_threshold': 1.5,
+    
+    # پارامترهای مدیریت ریسک
+    'risk_per_trade': 0.02,
+    'stop_loss_atr_multiplier': 2.0,
+    'take_profit_ratio': 2.5,
+    
+    # Trailing Stop پیشرفته
+    'use_trailing_stop': True,
+    'trailing_stop_activation': 1.0,
+    'trailing_stop_distance': 0.5,
+    'use_break_even': True,
+    'break_even_trigger': 1.5,
+    
+    # پارامترهای واگرایی
+    'divergence_lookback': 14,
+    'min_divergence_strength': 0.15,
+    
+    # مدیریت زمان
+    'max_trade_duration': 72,
+    
+    # امکانات پیشرفته
+    'enable_short_trades': True,
+    'use_partial_exits': True,
+    'partial_exit_ratio': 0.5,
+    'partial_exit_target': 2.0,
+    
+    # فیلتر رژیم بازار
+    'min_regime_score': 0.5,
+    'avoid_ranging_markets': True,
+}
+
+# Strategy Selection Map
+STRATEGY_MAP = {
+    "استراتژی پیشرفته RSI": "improved",
+    "استراتژی حرفه‌ای RSI": "professional"
+}
+
+# Strategy Parameters Map
+STRATEGY_PARAMS_MAP = {
+    "improved": IMPROVED_STRATEGY_PARAMS,
+    "professional": PROFESSIONAL_STRATEGY_PARAMS
+}
+
+TEST_STRATEGY_PARAMS = {
+    'overbought': 65,      # کاهش از 70
+    'oversold': 35,        # افزایش از 30
+    'rsi_period': 14,
+    'trend_ma_short': 10,  # کاهش برای حساسیت بیشتر
+    'trend_ma_long': 30,   # کاهش برای حساسیت بیشتر
+    'trend_threshold': 0.01,  # کاهش آستانه روند
+    'min_conditions': 2,   # کاهش از 3
+    'volume_ma_period': 10,
+    'volume_spike_threshold': 1.2,  # کاهش آستانه حجم
+    'risk_per_trade': 0.02,
+    'stop_loss_atr_multiplier': 1.0,  # کاهش ضریب استاپ لاس
+    'take_profit_ratio': 2.0,  # کاهش نسبت سود به زیان
+    'use_trailing_stop': True,
+    'trailing_stop_activation': 0.5,  # کاهش آستانه فعال‌سازی trailing
+    'trailing_stop_distance': 0.3,    # کاهش فاصله trailing
+    'divergence_lookback': 10,        # کاهش دوره واگرایی
+    'min_divergence_strength': 0.1,   # کاهش قدرت واگرایی
+    'max_trade_duration': 48          # کاهش زمان معامله
+}
+
+# Performance Metrics Settings
+PERFORMANCE_SETTINGS = {
+    'initial_portfolio_value': 10000.0,
+    'max_drawdown_threshold': 0.10,  # 10% حداکثر drawdown
+    'risk_free_rate': 0.02,  # نرخ سود بدون ریسک سالانه
+    'annual_trading_days': 252,
+    'performance_update_interval': 60,  # ثانیه
+}
+
+# UI Settings
+UI_SETTINGS = {
+    'auto_refresh_interval': 300,  # 5 دقیقه
+    'chart_candle_count': 100,
+    'theme': 'dark',
+    'language': 'fa',
+    'font_family': 'Vazir',
+    'font_size': 10,
+}
+
+# Logging Settings
+LOGGING_SETTINGS = {
+    'level': 'INFO',
+    'max_file_size': 10 * 1024 * 1024,  # 10 MB
+    'backup_count': 5,
+    'format': '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+}
+
+# Risk Management Settings
+RISK_MANAGEMENT = {
+    'max_position_size_percent': 0.20,  # حداکثر 20% پورتفولیو در یک پوزیشن
+    'max_daily_loss_percent': 0.05,     # حداکثر 5% ضرر روزانه
+    'max_consecutive_losses': 5,        # حداکثر 5 ضرر متوالی
+    'correlation_threshold': 0.7,       # حد آستانه همبستگی
+}
+
+# Backtest Settings
+BACKTEST_SETTINGS = {
+    'initial_balance': 10000.0,
+    'commission_rate': 0.001,  # 0.1% کارمزد
+    'slippage': 0.0005,       # 0.05% slippage
+    'test_period_days': 365,
+    'walk_forward_window': 90,
+    'validation_period': 30,
 }

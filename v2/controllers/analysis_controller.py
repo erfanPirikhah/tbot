@@ -3,6 +3,8 @@
 import logging
 import pandas as pd
 from strategies.improved_advanced_rsi_strategy import ImprovedAdvancedRsiStrategy
+from strategies.professional_advanced_rsi_strategy import ProfessionalAdvancedRsiStrategy
+
 from data.data_fetcher import fetch_market_data
 from indicators.rsi import calculate_rsi
 from config import RSI_PERIOD, MT5_SYMBOL_MAP, CRYPTOCOMPARE_SYMBOL_MAP
@@ -13,7 +15,11 @@ class AnalysisController:
     """کنترلر مدیریت تحلیل بازار"""
     
     def __init__(self):
-        self.strategy = ImprovedAdvancedRsiStrategy()
+        self.strategies = {
+            "improved": ImprovedAdvancedRsiStrategy,
+            "professional": ProfessionalAdvancedRsiStrategy
+        }
+        self.current_strategy = "professional"  # پیش‌فرض جدید
         self.current_data = None
         self.current_signal = None
         
