@@ -9,11 +9,10 @@ from typing import Optional
 # ایمپورت ماژول جدید MT5
 try:
     from .mt5_data import mt5_fetcher, MT5_AVAILABLE
-    MT5_AVAILABLE = True
-except ImportError:
+except ImportError as e:
     MT5_AVAILABLE = False
     mt5_fetcher = None
-    logging.warning("MetaTrader5 not available")
+    logging.warning(f"MetaTrader5 not available: {e}")
 
 logger = logging.getLogger(__name__)
 
@@ -56,20 +55,21 @@ def fetch_mt5_data(symbol: str, interval: str, limit: int = 100) -> pd.DataFrame
         
         mt5_interval = interval_map.get(interval, "H1")
         logger.info(f"دریافت داده MT5 برای {symbol} با تایم‌فریم {mt5_interval}")
-        return mt5_fetcher.fetch_market_data(symbol, mt5_interval, limit)
+        
+        if not MT5_AVAILABLE or not mt5_fetcher:
+            raise ValueError("MT5 در دسترس نیست")
+            
+        data = mt5_fetcher.fetch_market_data(symbol, mt5_interval, limit)
+        
+        if data.empty:
+            raise ValueError(f"داده‌ای از MT5 برای {symbol} دریافت نشد")
+            
+        return data
         
     except Exception as e:
-        logger.error(f"خطا در دریافت داده از MT5: {str(e)}")
-        # سعی کن از CryptoCompare به عنوان fallback استفاده کنی
-        try:
-            logger.info("تلاش برای دریافت داده از CryptoCompare به عنوان جایگزین...")
-            return fetch_cryptocompare_data(symbol, interval, limit)
-        except Exception as fallback_error:
-            logger.error(f"خطا در fallback به CryptoCompare: {fallback_error}")
-            # ایجاد داده نمونه
-            from utils.sample_data import create_sample_data
-            logger.info("استفاده از داده نمونه...")
-            return create_sample_data(symbol, limit)
+        error_msg = f"خطا در دریافت داده از MT5 برای {symbol}: {str(e)}"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
 
 def fetch_cryptocompare_data(symbol: str, interval: str, limit: int = 100) -> pd.DataFrame:
     """دریافت داده از CryptoCompare"""
@@ -142,58 +142,100 @@ def fetch_cryptocompare_data(symbol: str, interval: str, limit: int = 100) -> pd
 
     except Exception as e:
         logger.error(f"Error fetching data from CryptoCompare: {str(e)}")
-        # Fallback به داده نمونه
-        from utils.sample_data import create_sample_data
-        logger.info("استفاده از داده نمونه به دلیل خطا در CryptoCompare")
-        return create_sample_data(symbol, limit)
+        raise
 
 def get_current_price(symbol: str, data_source: str = "AUTO") -> float:
-    """دریافت قیمت لحظه‌ای با fallback پیشرفته"""
+    """دریافت قیمت لحظه‌ای - نسخه تصحیح شده"""
     from config import MT5_SYMBOL_MAP, CRYPTOCOMPARE_SYMBOL_MAP
     
-    logger.info(f"دریافت قیمت لحظه‌ای برای {symbol} از {data_source}")
+    logger.info(f"💰 دریافت قیمت لحظه‌ای برای {symbol} از {data_source}")
     
+    # تشخیص خودکار منبع داده
     if data_source == "AUTO":
         if symbol in MT5_SYMBOL_MAP.values() and MT5_AVAILABLE:
             data_source = "MT5"
         else:
             data_source = "CRYPTOCOMPARE"
     
-    price = 0.0
+    logger.info(f"🔍 استفاده از منبع داده: {data_source} برای نماد: {symbol}")
     
     if data_source == "MT5" and MT5_AVAILABLE:
-        price = get_mt5_price(symbol)
-        if price > 0:
-            logger.info(f"قیمت MT5 برای {symbol}: {price}")
-            return price
-        else:
-            logger.warning(f"قیمت MT5 برای {symbol} دریافت نشد، تلاش با CryptoCompare...")
+        try:
+            price = get_mt5_price(symbol)
+            if price > 0:
+                logger.info(f"✅ قیمت MT5 برای {symbol}: {price}")
+                return price
+            else:
+                logger.warning(f"⚠️ قیمت MT5 برای {symbol} صفر یا نامعتبر است")
+                # Fallback: سعی کن از داده‌های تاریخی استفاده کنی
+                return get_fallback_price(symbol, data_source)
+        except Exception as e:
+            logger.error(f"❌ خطا در دریافت قیمت MT5 برای {symbol}: {e}")
+            return get_fallback_price(symbol, data_source)
     
     # Fallback به CryptoCompare
     if symbol in CRYPTOCOMPARE_SYMBOL_MAP.values():
-        price = get_cryptocompare_price(symbol)
-        if price > 0:
-            logger.info(f"قیمت CryptoCompare برای {symbol}: {price}")
+        try:
+            price = get_cryptocompare_price(symbol)
+            if price > 0:
+                logger.info(f"✅ قیمت CryptoCompare برای {symbol}: {price}")
+                return price
+        except Exception as e:
+            logger.error(f"❌ خطا در دریافت قیمت CryptoCompare برای {symbol}: {e}")
+    
+    # Fallback نهایی
+    return get_fallback_price(symbol, data_source)
+
+def get_fallback_price(symbol: str, data_source: str) -> float:
+    """دریافت قیمت جایگزین از داده‌های تاریخی"""
+    try:
+        logger.info(f"🔄 استفاده از Fallback برای قیمت {symbol}")
+        
+        # دریافت داده‌های تاریخی اخیر
+        data = fetch_market_data(symbol, "H1", 1, data_source)
+        
+        if not data.empty and 'close' in data.columns:
+            price = data['close'].iloc[-1]
+            logger.info(f"✅ قیمت Fallback از داده تاریخی برای {symbol}: {price}")
             return price
-    
-    # Fallback نهایی به داده نمونه
-    if price == 0:
-        from utils.sample_data import create_sample_data
-        sample_df = create_sample_data(symbol, 1)
-        price = sample_df['close'].iloc[-1]
-        logger.warning(f"استفاده از داده نمونه برای {symbol}. قیمت: {price:.2f}")
-    
-    return price
+        else:
+            logger.error(f"❌ Fallback نیز برای {symbol} شکست خورد")
+            return 0.0
+            
+    except Exception as e:
+        logger.error(f"❌ خطا در Fallback قیمت برای {symbol}: {e}")
+        return 0.0
 
 def get_mt5_price(symbol: str) -> float:
-    """دریافت قیمت از MT5"""
+    """دریافت قیمت از MT5 - نسخه بهبود یافته"""
     if not MT5_AVAILABLE or not mt5_fetcher:
+        logger.error("❌ MT5 در دسترس نیست")
         return 0.0
         
     try:
-        return mt5_fetcher.get_current_price(symbol)
+        # مطمئن شویم متصل هستیم
+        if not mt5_fetcher.ensure_connected():
+            logger.error("❌ اتصال به MT5 برقرار نیست")
+            return 0.0
+        
+        # دریافت قیمت
+        price = mt5_fetcher.get_current_price(symbol)
+        
+        if price <= 0:
+            logger.warning(f"⚠️ قیمت دریافتی از MT5 برای {symbol} نامعتبر است: {price}")
+            
+            # روش جایگزین: استفاده از symbol_info مستقیم
+            import MetaTrader5 as mt5
+            symbol_info = mt5.symbol_info(symbol)
+            if symbol_info and hasattr(symbol_info, 'bid') and symbol_info.bid > 0:
+                price = float(symbol_info.bid)
+                logger.info(f"✅ قیمت جایگزین از symbol_info برای {symbol}: {price}")
+                return price
+        
+        return price
+        
     except Exception as e:
-        logger.error(f"خطا در دریافت قیمت MT5 برای {symbol}: {e}")
+        logger.error(f"❌ خطا در دریافت قیمت MT5 برای {symbol}: {e}")
         return 0.0
 
 def get_cryptocompare_price(symbol: str) -> float:
@@ -211,3 +253,23 @@ def set_cryptocompare_api_key(api_key: str):
     """تنظیم API Key برای CryptoCompare"""
     cryptocompare.cryptocompare._set_api_key_parameter(api_key)
     logger.info("CryptoCompare API Key set successfully")
+
+def get_price_from_historical(symbol: str, data_source: str) -> float:
+    """دریافت قیمت از آخرین داده تاریخی - راه‌حل قطعی"""
+    try:
+        logger.info(f"📊 دریافت قیمت از داده تاریخی برای {symbol}")
+        
+        # دریافت آخرین داده
+        data = fetch_market_data(symbol, "H1", 2, data_source)
+        
+        if not data.empty and 'close' in data.columns:
+            price = data['close'].iloc[-1]
+            logger.info(f"✅ قیمت از داده تاریخی برای {symbol}: {price}")
+            return price
+        else:
+            logger.error(f"❌ دریافت قیمت از داده تاریخی برای {symbol} شکست خورد")
+            return 0.0
+            
+    except Exception as e:
+        logger.error(f"❌ خطا در دریافت قیمت تاریخی برای {symbol}: {e}")
+        return 0.0
