@@ -100,9 +100,14 @@ class EnhancedRSIBacktestMT5:
             # محاسبه اندیکاتور RSI
             data = self._calculate_rsi(data)
             
+            # محاسبه میانگین‌های متحرک برای فیلتر روند
+            data['MA_10'] = data['close'].rolling(10).mean()
+            data['MA_20'] = data['close'].rolling(20).mean()
+            
             logger.info(f"✅ دریافت {len(data)} کندل از MT5 برای {symbol}")
             logger.info(f"📅 بازه زمانی: {data.index[0]} تا {data.index[-1]}")
             logger.info(f"💰 محدوده قیمت: {data['low'].min():.4f} - {data['high'].max():.4f}")
+            logger.info(f"📊 نوسان بازار: {data['close'].pct_change().std():.4f}")
             
             return data
             
@@ -140,21 +145,10 @@ class EnhancedRSIBacktestMT5:
         """
         logger.info("🚀 شروع بکتست با داده‌های واقعی MT5")
         
-        # پارامترهای پیش‌فرض استراتژی
+        # پارامترهای پیش‌فرض استراتژی بهبود یافته
         if strategy_params is None:
             strategy_params = {
-                'rsi_period': 14,
-                'rsi_base_oversold': 35,
-                'rsi_base_overbought': 65,
-                'risk_per_trade': 0.02,
-                'max_trade_duration': 150,
-                'enable_short_trades': True,
-                'use_trend_filter': True,
-                'use_divergence': True,
-                'enable_trailing_stop': True,
-                'min_position_size': 0.001,
-                'ma_period_trend': 20,
-                'enable_analytical_logging': False
+ 
             }
         
         # دریافت داده‌های واقعی
@@ -233,7 +227,10 @@ class EnhancedRSIBacktestMT5:
                 execution_price = current_price * (1 - self.slippage)
             
             # اعمال کارمزد
-            commission_cost = execution_price * signal.get('position_size', 0) * self.commission
+            position_size = signal.get('position_size', 0)
+            commission_cost = 0
+            if position_size > 0:
+                commission_cost = execution_price * position_size * self.commission
             
             # ذخیره اطلاعات معامله
             trade_record = {
@@ -241,7 +238,7 @@ class EnhancedRSIBacktestMT5:
                 'action': signal['action'],
                 'symbol': signal.get('symbol', 'UNKNOWN'),
                 'price': execution_price,
-                'position_size': signal.get('position_size', 0),
+                'position_size': position_size,
                 'stop_loss': signal.get('stop_loss', 0),
                 'take_profit': signal.get('take_profit', 0),
                 'commission': commission_cost,
@@ -255,7 +252,7 @@ class EnhancedRSIBacktestMT5:
             if self.detailed_logging:
                 logger.info(
                     f"🎯 {signal['action']} {signal.get('symbol', '')} at {execution_price:.4f} | "
-                    f"Size: {signal.get('position_size', 0):.4f} | "
+                    f"Size: {position_size:.0f} | "
                     f"RSI: {signal.get('rsi', 0):.1f} | "
                     f"Strength: {signal.get('signal_strength', 'NORMAL')}"
                 )
@@ -296,7 +293,7 @@ class EnhancedRSIBacktestMT5:
             'trades': self.trades_df,
             'equity_curve': self.equity_curve,
             'signals': signals,
-            'parameters': strategy.__dict__,
+            'parameters': {k: v for k, v in strategy.__dict__.items() if not k.startswith('_')},
             'symbol': symbol,
             'data_info': {
                 'start_date': data.index[0],
@@ -305,14 +302,14 @@ class EnhancedRSIBacktestMT5:
                 'price_range': f"{data['low'].min():.4f} - {data['high'].max():.4f}",
                 'initial_price': data['close'].iloc[0],
                 'final_price': data['close'].iloc[-1],
-                'price_change_pct': ((data['close'].iloc[-1] - data['close'].iloc[0]) / data['close'].iloc[0] * 100)
+                'price_change_pct': ((data['close'].iloc[-1] - data['close'].iloc[0]) / data['close'].iloc[0] * 100),
+                'volatility': data['close'].pct_change().std()
             }
         }
     
     def _calculate_daily_returns(self) -> pd.Series:
         if self.equity_curve is None or len(self.equity_curve) < 2:
             return pd.Series()
-
            
         try:
             # 🔧 اطمینان از DatetimeIndex
@@ -333,8 +330,6 @@ class EnhancedRSIBacktestMT5:
                 return simple_returns
             except:
                 return pd.Series()    
-        
-
     
     def _calculate_performance_metrics(self):
         """محاسبه معیارهای عملکرد پیشرفته"""
@@ -520,9 +515,12 @@ class EnhancedRSIBacktestMT5:
         report.append(f"Total Candles: {data_info.get('total_candles', 0)}")
         report.append(f"Price Range: {data_info.get('price_range', 'N/A')}")
         report.append(f"Price Change: {data_info.get('price_change_pct', 0):.2f}%")
+        report.append(f"Market Volatility: {data_info.get('volatility', 0):.4f}")
         
         # اطلاعات کلی
         metrics = self.results.get('advanced_metrics', {})
+        strategy_metrics = self.results.get('strategy_metrics', {})
+        
         report.append("")
         report.append(f"📈 PERFORMANCE SUMMARY")
         report.append(f"Initial Capital: ${metrics.get('initial_capital', 0):,.2f}")
@@ -535,18 +533,20 @@ class EnhancedRSIBacktestMT5:
         
         report.append("")
         report.append("🎯 TRADING METRICS")
-        report.append(f"Total Trades: {metrics.get('total_trades', 0)}")
-        report.append(f"Win Rate: {metrics.get('win_rate_pct', 0):.2f}%")
-        report.append(f"Profit Factor: {metrics.get('profit_factor', 0):.3f}")
-        report.append(f"Average Trade Profit: {metrics.get('avg_trade_profit', 0):.4f}")
+        report.append(f"Total Trades: {strategy_metrics.get('total_trades', 0)}")
+        report.append(f"Winning Trades: {strategy_metrics.get('winning_trades', 0)}")
+        report.append(f"Losing Trades: {strategy_metrics.get('losing_trades', 0)}")
+        report.append(f"Win Rate: {strategy_metrics.get('win_rate', 0):.2f}%")
+        report.append(f"Profit Factor: {strategy_metrics.get('profit_factor', 0):.2f}")
+        report.append(f"Average Trade PnL: ${strategy_metrics.get('average_trade_pnl', 0):.2f}")
         
         report.append("")
         report.append("⚙️ STRATEGY PARAMETERS")
         params = self.results.get('parameters', {})
         important_params = [
             'rsi_period', 'rsi_base_oversold', 'rsi_base_overbought',
-            'risk_per_trade', 'enable_pyramiding', 'use_divergence',
-            'enable_trailing_stop', 'min_position_size'
+            'risk_per_trade', 'use_trend_filter', 'use_divergence',
+            'enable_trailing_stop', 'min_position_size', 'max_trades_per_100'
         ]
         for param in important_params:
             if param in params:
@@ -566,10 +566,7 @@ class EnhancedRSIBacktestMT5:
             save_data = {
                 'symbol': self.results.get('symbol'),
                 'data_info': self.results.get('data_info', {}),
-                'parameters': {
-                    k: v for k, v in self.results.get('parameters', {}).items() 
-                    if not k.startswith('_')
-                },
+                'parameters': self.results.get('parameters', {}),
                 'metrics': {
                     'strategy_metrics': self.results.get('strategy_metrics', {}),
                     'advanced_metrics': self.results.get('advanced_metrics', {})
@@ -594,18 +591,7 @@ def run_mt5_backtest_example():
     
     # پارامترهای استراتژی بهبود یافته
     strategy_params = {
-        'rsi_period': 14,
-        'rsi_base_oversold': 35,
-        'rsi_base_overbought': 65,
-        'risk_per_trade': 0.02,
-        'max_trade_duration': 150,
-        'enable_short_trades': True,
-        'use_trend_filter': True,
-        'use_divergence': True,
-        'enable_trailing_stop': True,
-        'min_position_size': 0.001,
-        'ma_period_trend': 20,
-        'enable_analytical_logging': True
+ # غیرفعال برای سیگنال‌های بیشتر
     }
     
     # ایجاد بکتستر
