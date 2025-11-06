@@ -7,11 +7,13 @@ import sys
 import os
 from datetime import datetime, timedelta
 import warnings
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import inspect
 
 # Add project paths
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+v4_dir = os.path.dirname(os.path.abspath(__file__))
+if v4_dir not in sys.path:
+    sys.path.insert(0, v4_dir)
 
 # Initial settings
 warnings.filterwarnings('ignore')
@@ -19,9 +21,10 @@ warnings.filterwarnings('ignore')
 # Import project modules
 from utils.logger import setup_logger, get_trade_logger, get_performance_logger
 from data.data_fetcher import DataFetcher
-from strategies.enhanced_rsi_strategy_v4 import EnhancedRsiStrategyV4
+from strategies.enhanced_rsi_strategy_v4 import EnhancedRsiStrategyV4, PositionType
+from strategies.ensemble_strategy_v4 import EnsembleRsiStrategyV4
 from backtest.enhanced_rsi_backtest_v4 import EnhancedRSIBacktestV4
-from config.parameters import OPTIMIZED_PARAMS_V4, MARKET_CONDITION_PARAMS
+from config.parameters import OPTIMIZED_PARAMS_V4, MARKET_CONDITION_PARAMS, get_best_params_for_timeframe
 from config.market_config import SYMBOL_MAPPING, TIMEFRAME_MAPPING, DEFAULT_CONFIG
 
 class TradingBotV4:
@@ -37,6 +40,11 @@ class TradingBotV4:
         self.logger = setup_logger("trading_bot_v4", logging.INFO, log_to_file=True, log_to_console=True, log_dir=output_dir)
         self.trade_logger = get_trade_logger(log_dir=output_dir)
         self.performance_logger = get_performance_logger(log_dir=output_dir)
+
+        # Live output directory for multi-symbol live scan
+        self.live_output_dir = os.path.join("logs", "live")
+        os.makedirs(self.live_output_dir, exist_ok=True)
+        self.live_log_path = None
         
         # Create instances
         self.data_fetcher = DataFetcher()
@@ -52,44 +60,71 @@ class TradingBotV4:
         self.logger.info(f"💰 Initial capital: ${self.portfolio_value:,.2f}")
 
     def _filter_strategy_params(self, strategy_params: Dict[str, Any]) -> Dict[str, Any]:
-        """Filter out parameters that don't exist in strategy class"""
+        """Filter out parameters that don't exist in the selected strategy class."""
         try:
-            # Get valid parameters from strategy class
-            sig = inspect.signature(EnhancedRsiStrategyV4.__init__)
+            cls_name = (strategy_params or {}).get('strategy_class', 'EnhancedRsiStrategyV4')
+            target_cls = EnhancedRsiStrategyV4
+            if cls_name == 'EnsembleRsiStrategyV4':
+                target_cls = EnsembleRsiStrategyV4
+
+            # Build valid parameter set from selected class
+            sig = inspect.signature(target_cls.__init__)
             valid_params = set(sig.parameters.keys())
-            
-            # Remove 'self' from valid params
             valid_params.discard('self')
-            
-            # Filter parameters
-            filtered_params = {k: v for k, v in strategy_params.items() if k in valid_params}
-            
-            # Log removed parameters
-            removed_params = set(strategy_params.keys()) - set(filtered_params.keys())
-            if removed_params:
-                self.logger.warning(f"⚠️ Removed incompatible parameters: {removed_params}")
+
+            # Filter map to selected class signature
+            filtered_params = {k: v for k, v in (strategy_params or {}).items() if k in valid_params}
+
+            # Report removals excluding meta keys like 'strategy_class'
+            removed_params = set((strategy_params or {}).keys()) - set(filtered_params.keys())
+            removed_params_without_meta = removed_params - {'strategy_class'}
+            if removed_params_without_meta:
+                self.logger.warning(f"⚠️ Removed incompatible parameters: {removed_params_without_meta}")
             
             return filtered_params
-            
+
         except Exception as e:
             self.logger.error(f"Error filtering strategy parameters: {e}")
-            return strategy_params
+            return strategy_params or {}
+
+    def _infer_profile_name_from_timeframe(self, timeframe: str) -> str:
+        """Infer profile name used by get_best_params_for_timeframe for logging/diagnostics."""
+        tf = (timeframe or '').upper()
+        if tf in ['M1', 'M5']:
+            return 'ENSEMBLE_SCALPING_M5'
+        elif tf in ['M15', 'M30']:
+            return 'ENSEMBLE_INTRADAY_M15'
+        elif tf == 'H1':
+            return 'ENHANCED_INTRADAY_H1'
+        elif tf == 'H4':
+            return 'OPTIMIZED_PARAMS_V4'
+        else:
+            return 'CONSERVATIVE_PARAMS'
 
     def initialize_strategy(self, strategy_params: Dict[str, Any] = None):
-        """Initialize strategy"""
+        """Initialize strategy (supports Ensemble via 'strategy_class')."""
         try:
             if strategy_params is None:
                 strategy_params = OPTIMIZED_PARAMS_V4
-            
-            # Filter out incompatible parameters
+
+            cls_name = (strategy_params or {}).get('strategy_class', 'EnhancedRsiStrategyV4')
             filtered_params = self._filter_strategy_params(strategy_params)
-            
-            self.strategy = EnhancedRsiStrategyV4(**filtered_params)
-            self.logger.info("✅ RSI Strategy Version 4 initialized")
-            self.logger.info(f"📊 Parameters: RSI({filtered_params['rsi_period']}), Risk: {filtered_params['risk_per_trade']*100}%")
-            
+
+            if cls_name == 'EnsembleRsiStrategyV4':
+                self.strategy = EnsembleRsiStrategyV4(**filtered_params)
+                self.logger.info("✅ Ensemble RSI Strategy V4 initialized")
+            else:
+                self.strategy = EnhancedRsiStrategyV4(**filtered_params)
+                self.logger.info("✅ RSI Strategy Version 4 initialized")
+
+            # Common param logging if available
+            rsi_period = filtered_params.get('rsi_period')
+            risk = filtered_params.get('risk_per_trade')
+            if rsi_period is not None and risk is not None:
+                self.logger.info(f"📊 Parameters: RSI({rsi_period}), Risk: {risk*100}%")
+
             return True
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error initializing strategy: {e}")
             return False
@@ -186,6 +221,16 @@ class TradingBotV4:
         """Run complete backtest"""
         try:
             self.logger.info("🎯 Starting complete backtest")
+            
+            # Auto-select params by timeframe when not provided (enables Ensemble on M5/M15)
+            if strategy_params is None:
+                try:
+                    strategy_params = get_best_params_for_timeframe(timeframe)
+                    profile_name = self._infer_profile_name_from_timeframe(timeframe)
+                    self.logger.info(f"🧭 Auto-selected profile for {timeframe}: {profile_name} | strategy_class={strategy_params.get('strategy_class','EnhancedRsiStrategyV4')}")
+                except Exception as e:
+                    self.logger.warning(f"Param auto-selection failed, falling back to defaults: {e}")
+                    strategy_params = OPTIMIZED_PARAMS_V4
             
             # Initialize strategy
             if not self.initialize_strategy(strategy_params):
@@ -316,22 +361,287 @@ class TradingBotV4:
             self.logger.error(f"Error displaying status: {e}")
 
     def _wait_for_next_candle(self, timeframe: str):
-        """Wait for next candle"""
+        """Wait for next candle (realistic sleep for live modes)"""
         try:
             # Calculate wait time based on timeframe
             wait_times = {
-                'M1': 60, 'M5': 300, 'M15': 900, 'M30': 1800,
-                'H1': 3600, 'H4': 14400, 'D1': 86400
+                'M1': 60, '1M': 60, '1m': 60,
+                'M5': 300, '5M': 300, '5m': 300,
+                'M15': 900, '15m': 900, 'M30': 1800,
+                'H1': 3600, '1h': 3600, 'H4': 14400,
+                'D1': 86400
             }
-            
-            wait_seconds = wait_times.get(timeframe, 3600)
-            
-            # In simulation, we only wait one second
             import time
-            time.sleep(1)
-            
+            wait_seconds = wait_times.get(timeframe, 60)
+            time.sleep(wait_seconds)
         except Exception as e:
             self.logger.error(f"Error waiting for candle: {e}")
+
+    def _init_live_trade_log(self, timeframe: str) -> str:
+        """Initialize JSONL log file for live trades."""
+        try:
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = os.path.join(self.live_output_dir, f"live_trades_{timeframe}_{ts}.jsonl")
+            # ensure directory exists
+            os.makedirs(self.live_output_dir, exist_ok=True)
+            # touch file
+            with open(filename, "a", encoding="utf-8") as f:
+                f.write("")
+            self.live_log_path = filename
+            self.logger.info(f"📝 Live trades will be logged to: {filename}")
+            return filename
+        except Exception as e:
+            self.logger.error(f"Error initializing live trade log: {e}")
+            self.live_log_path = None
+            return ""
+
+    def _append_live_trade_log(self, record: Dict[str, Any]) -> None:
+        """Append a single JSON record to live trades log."""
+        try:
+            if not self.live_log_path:
+                return
+            import json
+            with open(self.live_log_path, "a", encoding="utf-8") as f:
+                json.dump(self._convert_to_serializable(record), f, ensure_ascii=False, default=str)
+                f.write("\n")
+        except Exception as e:
+            self.logger.error(f"Error writing live trade log: {e}")
+
+    def _fetch_with_fallback(self, symbol: str, timeframe: str, limit: int = 200) -> pd.DataFrame:
+        """Fetch market data with timeframe fallback across sources (M1<->1m, M5<->5m)."""
+        try:
+            return self.get_market_data(symbol, timeframe, limit=limit)
+        except Exception:
+            try:
+                tf_map = {'M1': '1m', 'M5': '5m', '1m': 'M1', '5m': 'M5'}
+                alt_tf = tf_map.get(timeframe, timeframe)
+                return self.get_market_data(symbol, alt_tf, limit=limit)
+            except Exception as e2:
+                self.logger.error(f"❌ Data fetch failed for {symbol} ({timeframe}): {e2}")
+                return pd.DataFrame()
+
+    def _check_entry_conditions(self, strat, df: pd.DataFrame, position_type: PositionType):
+        """
+        Safe wrapper for strategy entry gating. Uses strategy.check_entry_conditions when present,
+        otherwise falls back to ensemble-style score aggregation and gating.
+        Returns (eligible: bool, messages: List[str])
+        """
+        try:
+            # Preferred path if strategy exposes the method
+            if hasattr(strat, "check_entry_conditions"):
+                return strat.check_entry_conditions(df, position_type)
+
+            # Fallback for Ensemble strategy: compute features and aggregate scores
+            if hasattr(strat, "_ensure_min_features"):
+                try:
+                    df = strat._ensure_min_features(df)
+                except Exception:
+                    pass
+
+            # Basic pre-checks (session and spacing)
+            try:
+                now = df.index[-1]
+                if hasattr(strat, "_in_active_session") and not strat._in_active_session(now):
+                    return False, ["Outside active session"]
+            except Exception:
+                pass
+
+            candles_since_last = len(df) - 1 - getattr(strat, "_last_trade_index", -100)
+            min_between = getattr(strat, "min_candles_between", 3)
+            if candles_since_last < min_between:
+                return False, [f"Spacing {candles_since_last}<{min_between}"]
+
+            # Aggregate scores if available
+            if hasattr(strat, "_aggregate_scores"):
+                long_score, short_score, msgs = strat._aggregate_scores(df)
+            else:
+                return False, ["No gating available"]
+
+            entry_threshold = getattr(strat, "entry_threshold", 1.6)
+            dominance_ratio = getattr(strat, "dominance_ratio", 1.15)
+            enable_short = getattr(strat, "enable_short_trades", True)
+
+            if position_type == PositionType.LONG:
+                eligible = (long_score >= entry_threshold) and (long_score >= short_score * dominance_ratio)
+            else:
+                eligible = enable_short and (short_score >= entry_threshold) and (short_score >= long_score * dominance_ratio)
+
+            return bool(eligible), msgs
+
+        except Exception as e:
+            self.logger.error(f"_check_entry_conditions fallback error: {e}")
+            return False, [f"Error: {e}"]
+
+    def run_multi_symbol_live_scan(
+        self,
+        symbols: List[str],
+        timeframe: str = "M1",
+        duration_hours: int = 1,
+        data_source: str = "AUTO",
+        max_open_positions: int = 1
+    ):
+        """
+        Live scan across multiple symbols (M1/M5) for 1-2 hours, pick best entries, and log trades.
+        - Scans at least 5-10 symbols.
+        - Opens position on the symbol with best conditions (by RSI gate strength).
+        - Logs all entries/exits to a separate JSONL file, including PnL and outcome.
+        """
+        try:
+            if not symbols or len(symbols) < 1:
+                raise ValueError("No symbols provided")
+
+            # Clamp duration to 1..2 hours as requested
+            duration_hours = max(1, min(2, int(duration_hours or 1)))
+
+            # Select parameters per timeframe (M1/M5 -> Ensemble by design)
+            try:
+                base_params = get_best_params_for_timeframe(timeframe)
+            except Exception:
+                # fallback to M5 ensemble if unknown
+                base_params = get_best_params_for_timeframe("M5")
+
+            # Strategy per symbol (isolated state per market)
+            strategies: Dict[str, Any] = {}
+            for sym in symbols:
+                params = dict(base_params)  # copy
+                cls_name = params.get('strategy_class', 'EnhancedRsiStrategyV4')
+                filtered = self._filter_strategy_params(params)
+                if cls_name == 'EnsembleRsiStrategyV4':
+                    strategies[sym] = EnsembleRsiStrategyV4(**filtered)
+                else:
+                    strategies[sym] = EnhancedRsiStrategyV4(**filtered)
+                self.logger.info(f"✅ Strategy initialized for {sym} | {cls_name}")
+
+            # Init trade log
+            self._init_live_trade_log(timeframe)
+
+            self.is_running = True
+            end_time = datetime.now() + timedelta(hours=duration_hours)
+            iteration = 0
+
+            # Simple cache for last fetched data to avoid double-fetch on execution
+            data_cache: Dict[str, pd.DataFrame] = {}
+
+            while datetime.now() < end_time and self.is_running:
+                iteration += 1
+                candidates: List[Dict[str, Any]] = []
+
+                # 1) Process exits for active positions; 2) Build entry candidates for flat symbols
+                for sym, strat in strategies.items():
+                    try:
+                        df = self._fetch_with_fallback(sym, timeframe, limit=200)
+                        if df is None or df.empty:
+                            continue
+                        data_cache[sym] = df
+
+                        # Ensure RSI for evaluation
+                        try:
+                            if 'RSI' not in df.columns:
+                                # Access strategy's RSI calc if needed
+                                df = strat._calculate_rsi(df)  # type: ignore
+                        except Exception:
+                            pass
+
+                        # If in position -> let strategy manage exits
+                        if getattr(strat, "_position", None) and strat._position != PositionType.OUT:
+                            signal = strat.generate_signal(df, iteration)
+                            action = signal.get('action')
+                            if action in ('EXIT', 'PARTIAL_EXIT'):
+                                # Log exit (with PnL)
+                                record = {
+                                    "timestamp": df.index[-1],
+                                    "type": "EXIT" if action == "EXIT" else "PARTIAL_EXIT",
+                                    "symbol": sym,
+                                    "price": float(signal.get('price', df['close'].iloc[-1])),
+                                    "pnl_percentage": signal.get('pnl_percentage'),
+                                    "pnl_amount": signal.get('pnl_amount'),
+                                    "exit_reason": signal.get('exit_reason', signal.get('reason', '')),
+                                    "outcome": ("WIN" if (signal.get('pnl_percentage') or 0) >= 0 else "LOSS")
+                                }
+                                self._append_live_trade_log(record)
+                            continue
+
+                        # If flat -> evaluate entry strength for LONG/SHORT
+                        current_rsi = float(df['RSI'].iloc[-1]) if 'RSI' in df.columns else 50.0
+
+                        # Check LONG
+                        ok_long, cond_long = self._check_entry_conditions(strat, df, PositionType.LONG)
+                        if ok_long:
+                            strength_long = (getattr(strat, 'rsi_oversold', 35) + getattr(strat, 'rsi_entry_buffer', 5)) - current_rsi
+                            candidates.append({
+                                "symbol": sym,
+                                "side": "LONG",
+                                "strength": float(max(0.0, strength_long)),
+                                "conditions": cond_long
+                            })
+
+                        # Check SHORT (if enabled)
+                        if getattr(strat, 'enable_short_trades', True):
+                            ok_short, cond_short = self._check_entry_conditions(strat, df, PositionType.SHORT)
+                            if ok_short:
+                                strength_short = current_rsi - (getattr(strat, 'rsi_overbought', 65) - getattr(strat, 'rsi_entry_buffer', 5))
+                                candidates.append({
+                                    "symbol": sym,
+                                    "side": "SHORT",
+                                    "strength": float(max(0.0, strength_short)),
+                                    "conditions": cond_short
+                                })
+
+                    except Exception as e:
+                        self.logger.error(f"Scan error for {sym}: {e}")
+                        continue
+
+                # Determine capacity
+                open_positions = sum(1 for s in strategies.values() if getattr(s, "_position", None) != PositionType.OUT)
+                capacity = max(0, max_open_positions - open_positions)
+
+                # Pick best candidates by strength
+                if capacity > 0 and candidates:
+                    candidates.sort(key=lambda x: x['strength'], reverse=True)
+                    selected = candidates[:capacity]
+
+                    for pick in selected:
+                        sym = pick['symbol']
+                        df = data_cache.get(sym)
+                        if df is None or df.empty:
+                            df = self._fetch_with_fallback(sym, timeframe, limit=200)
+                        if df is None or df.empty:
+                            continue
+                        strat = strategies[sym]
+                        signal = strat.generate_signal(df, iteration)
+                        action = signal.get('action')
+                        if action in ('BUY', 'SELL'):
+                            # Log entry
+                            record = {
+                                "timestamp": df.index[-1],
+                                "type": "ENTRY",
+                                "symbol": sym,
+                                "side": "LONG" if action == "BUY" else "SHORT",
+                                "price": float(signal.get('price', df['close'].iloc[-1])),
+                                "position_size": signal.get('position_size'),
+                                "stop_loss": signal.get('stop_loss'),
+                                "take_profit": signal.get('take_profit'),
+                                "reason": signal.get('reason', ''),
+                                "conditions": pick.get('conditions', []),
+                            }
+                            self._append_live_trade_log(record)
+                            self.trade_logger.info(f"🎯 {action} {sym} @ {record['price']:.5f}")
+
+                # Status every iteration
+                total_open = sum(1 for s in strategies.values() if getattr(s, "_position", None) != PositionType.OUT)
+                self.logger.info(f"⏱️ Iteration {iteration} | Open positions: {total_open} | Candidates: {len(candidates)}")
+
+                # Wait for next candle based on timeframe
+                self._wait_for_next_candle(timeframe)
+
+            self.logger.info("✅ Multi-symbol live scan completed")
+            if self.live_log_path:
+                self.logger.info(f"📄 Live trades log saved: {self.live_log_path}")
+
+        except Exception as e:
+            self.logger.error(f"❌ Multi-symbol live scan error: {e}")
+        finally:
+            self.is_running = False
 
     def _convert_to_serializable(self, obj):
         """Convert non-serializable objects to serializable formats"""
@@ -380,6 +690,53 @@ class TradingBotV4:
         except Exception as e:
             self.logger.error(f"Error saving results: {e}")
 
+    def optimize_h1_parameters(self, symbol: str = "EURUSD", days_back: int = 60) -> Dict[str, Any]:
+        """Run a small optimization grid for H1 to improve win rate/return, then backtest best."""
+        try:
+            # Ensure backtest engine
+            if not self.initialize_backtest():
+                raise Exception("Error initializing backtest engine")
+
+            # Fetch data via backtest engine for consistency
+            data = self.backtest_engine.fetch_real_data_from_mt5(symbol, "H1", days_back)
+
+            # Focused H1 grid (keep MTF disabled to avoid over-filtering)
+            param_grid = {
+                'rsi_entry_buffer': [3, 4, 5],
+                'stop_loss_atr_multiplier': [1.4, 1.6, 1.8],
+                'take_profit_ratio': [1.6, 1.8, 2.0],
+                'trailing_activation_percent': [1.0, 1.2, 1.5],
+                'min_candles_between': [3, 4, 5],
+                'enable_mtf': [False],
+                'enable_trend_filter': [True],
+                'risk_per_trade': [0.01]
+            }
+
+            best_params = self.backtest_engine.optimize_parameters(data, param_grid)
+            self.logger.info(f"🔧 Best H1 params: {best_params}")
+
+            # Confirmatory backtest with best params
+            results = self.backtest_engine.run_backtest(
+                symbol=symbol,
+                timeframe="H1",
+                days_back=days_back,
+                strategy_params=best_params
+            )
+
+            report = self.backtest_engine.generate_comprehensive_report()
+            print("\n" + "="*80)
+            print("Optimized H1 Backtest Results")
+            print("="*80)
+            print(report)
+
+            # Persist results summary
+            self._save_backtest_results(results, symbol, "H1")
+            return best_params
+
+        except Exception as e:
+            self.logger.error(f"❌ H1 optimization error: {e}")
+            return {}
+
     def get_available_symbols(self, data_source: str = "MT5") -> list:
         """Get available symbols list"""
         try:
@@ -423,6 +780,7 @@ def main():
             print("3. Live Simulation")
             print("4. Show Available Symbols")
             print("5. Test Data Fetching")
+            print("7. Multi-Symbol Live Scan (M1/M5)")
             print("6. Exit")
             
             choice = input("\nPlease select an option: ").strip()
@@ -437,6 +795,7 @@ def main():
                 print("\n🎯 Running custom backtest...")
                 symbol = input("Symbol (default: EURUSD): ").strip() or "EURUSD"
                 timeframe = input("Timeframe (default: H1): ").strip() or "H1"
+                
                 days = input("Days back (default: 90): ").strip()
                 days_back = int(days) if days.isdigit() else 90
                 
@@ -473,6 +832,23 @@ def main():
                     print(f"RSI: {data['RSI'].iloc[-1]:.1f}" if 'RSI' in data.columns else "RSI: Not calculated")
                 except Exception as e:
                     print(f"❌ Error: {e}")
+            
+            elif choice == "7":
+                # Multi-symbol live scan (M1/M5)
+                print("\n🔄 Starting multi-symbol live scan...")
+                symbols_input = input("Symbols (comma separated, default: BTC,ETH,ADA,XRP,SOL): ").strip() or "BTC,ETH,ADA,XRP,SOL"
+                symbols = [s.strip().upper() for s in symbols_input.split(",") if s.strip()]
+                timeframe = (input("Timeframe (M1 or M5, default: M1): ").strip() or "M1").upper()
+                try:
+                    hours = input("Duration hours (1-2, default: 1): ").strip()
+                    duration_hours = int(hours) if hours.isdigit() else 1
+                    duration_hours = max(1, min(2, duration_hours))
+                except Exception:
+                    duration_hours = 1
+                bot.is_running = True
+                bot.run_multi_symbol_live_scan(symbols=symbols, timeframe=timeframe, duration_hours=duration_hours)
+                if bot.live_log_path:
+                    print(f"\n📄 Live trades log: {bot.live_log_path}")
                     
             elif choice == "6":
                 # Exit

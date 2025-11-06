@@ -277,7 +277,7 @@ class EnhancedRsiStrategyV4:
             return 0
 
     def check_entry_conditions(self, data: pd.DataFrame, position_type: PositionType) -> Tuple[bool, List[str]]:
-        """🔥 SIMPLIFIED + MTF: شرایط ورود با پشتیبانی از Multi-Timeframe"""
+        """Enhanced entry conditions with optional Trend/Price/RSI confirmations + MTF"""
         conditions: List[str] = []
         try:
             # Ensure RSI present for base timeframe
@@ -288,15 +288,71 @@ class EnhancedRsiStrategyV4:
 
             # Base RSI gate
             if position_type == PositionType.LONG:
-                rsi_condition = current_rsi <= (self.rsi_oversold + self.rsi_entry_buffer)
-                if not rsi_condition:
+                if not (current_rsi <= (self.rsi_oversold + self.rsi_entry_buffer)):
                     return False, [f"RSI not suitable for LONG ({current_rsi:.1f})"]
                 conditions.append(f"RSI in BUY zone ({current_rsi:.1f})")
             elif position_type == PositionType.SHORT:
-                rsi_condition = current_rsi >= (self.rsi_overbought - self.rsi_entry_buffer)
-                if not rsi_condition:
+                if not (current_rsi >= (self.rsi_overbought - self.rsi_entry_buffer)):
                     return False, [f"RSI not suitable for SHORT ({current_rsi:.1f})"]
                 conditions.append(f"RSI in SELL zone ({current_rsi:.1f})")
+
+            # Optional RSI slope confirmation
+            if self.require_rsi_confirmation and len(data['RSI']) >= 2:
+                prev_rsi = float(data['RSI'].iloc[-2])
+                if position_type == PositionType.LONG and not (current_rsi >= prev_rsi):
+                    return False, [f"RSI slope not rising ({prev_rsi:.1f}->{current_rsi:.1f})"]
+                if position_type == PositionType.SHORT and not (current_rsi <= prev_rsi):
+                    return False, [f"RSI slope not falling ({prev_rsi:.1f}->{current_rsi:.1f})"]
+                conditions.append("RSI slope confirmed")
+
+            # Optional Trend filter using EMA alignment and ADX if available
+            if self.enable_trend_filter:
+                ema_ok = True
+                try:
+                    ema21 = float(data['EMA_21'].iloc[-1]) if 'EMA_21' in data.columns else None
+                    ema50 = float(data['EMA_50'].iloc[-1]) if 'EMA_50' in data.columns else None
+                    if ema21 is not None and ema50 is not None:
+                        if position_type == PositionType.LONG:
+                            ema_ok = ema21 >= ema50
+                        else:
+                            ema_ok = ema21 <= ema50
+                except Exception:
+                    ema_ok = True
+
+                adx_ok = True
+                try:
+                    if 'ADX' in data.columns:
+                        adx_val = float(data['ADX'].iloc[-1])
+                        adx_ok = adx_val >= 12.0
+                except Exception:
+                    adx_ok = True
+
+                if not (ema_ok and adx_ok):
+                    reason_parts = []
+                    if not ema_ok:
+                        reason_parts.append("EMA21-EMA50 misaligned")
+                    if not adx_ok:
+                        reason_parts.append("ADX<12")
+                    return False, [f"Trend filter: {' & '.join(reason_parts)}"]
+                conditions.append("Trend filter passed")
+
+            # Optional price confirmation using EMA9 and candle direction
+            if self.require_price_confirmation:
+                price_ok = True
+                try:
+                    close = float(data['close'].iloc[-1])
+                    open_ = float(data['open'].iloc[-1]) if 'open' in data.columns else close
+                    ema9 = float(data['EMA_9'].iloc[-1]) if 'EMA_9' in data.columns else None
+                    if ema9 is not None:
+                        if position_type == PositionType.LONG:
+                            price_ok = (close > ema9) and (close > open_)
+                        else:
+                            price_ok = (close < ema9) and (close < open_)
+                except Exception:
+                    price_ok = True
+                if not price_ok:
+                    return False, [f"Price confirmation failed"]
+                conditions.append("Price confirmation passed")
 
             # Multi-Timeframe alignment gate (uses columns if available)
             if self.enable_mtf:

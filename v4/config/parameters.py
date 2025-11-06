@@ -133,6 +133,109 @@ AGGRESSIVE_PARAMS = {
     'confirmation_candles': 1
 }
 
+# 🎯 پارامترهای Ensemble برای M5 و M15
+ENSEMBLE_SCALPING_M5 = {
+    'strategy_class': 'EnsembleRsiStrategyV4',
+    'rsi_period': 14,
+    'rsi_oversold': 35,
+    'rsi_overbought': 65,
+    'rsi_entry_buffer': 6,
+
+    'risk_per_trade': 0.02,
+    'stop_loss_atr_multiplier': 1.4,
+    'take_profit_ratio': 1.6,
+    'min_position_size': 80,
+    'max_position_size_ratio': 0.35,
+
+    'max_trades_per_100': 80,
+    'min_candles_between': 2,
+    'max_trade_duration': 35,
+
+    'enable_trailing_stop': True,
+    'trailing_activation_percent': 0.5,
+    'trailing_stop_atr_multiplier': 1.0,
+    'enable_partial_exit': True,
+    'partial_exit_ratio': 0.5,
+    'partial_exit_threshold': 0.8,
+
+    'enable_short_trades': True,
+
+    'session_filter_enabled': True,
+    'session_hours': [(7, 12), (13, 20)],
+    'session_timezone_offset': 0,
+
+    'bb_width_min': 0.001,
+    'bb_width_max': 0.06,
+}
+
+ENSEMBLE_INTRADAY_M15 = {
+    'strategy_class': 'EnsembleRsiStrategyV4',
+    'rsi_period': 14,
+    'rsi_oversold': 35,
+    'rsi_overbought': 65,
+    'rsi_entry_buffer': 5,
+
+    'risk_per_trade': 0.015,
+    'stop_loss_atr_multiplier': 1.6,
+    'take_profit_ratio': 1.8,
+    'min_position_size': 100,
+    'max_position_size_ratio': 0.35,
+
+    'max_trades_per_100': 50,
+    'min_candles_between': 3,
+    'max_trade_duration': 60,
+
+    'enable_trailing_stop': True,
+    'trailing_activation_percent': 0.6,
+    'trailing_stop_atr_multiplier': 1.2,
+    'enable_partial_exit': True,
+    'partial_exit_ratio': 0.5,
+    'partial_exit_threshold': 1.0,
+
+    'enable_short_trades': True,
+
+    'session_filter_enabled': True,
+    'session_hours': [(7, 12), (13, 20)],
+    'session_timezone_offset': 0,
+
+    'bb_width_min': 0.001,
+    'bb_width_max': 0.06,
+}
+
+# ✅ H1 profile tuned for higher win rate and realistic TP/SL
+ENHANCED_INTRADAY_H1 = {
+    'rsi_period': 14,
+    'rsi_oversold': 30,
+    'rsi_overbought': 70,
+    'rsi_entry_buffer': 4,
+
+    'risk_per_trade': 0.01,
+    'stop_loss_atr_multiplier': 1.8,
+    'take_profit_ratio': 2.0,
+    'min_position_size': 200,
+    'max_position_size_ratio': 0.25,
+
+    'max_trades_per_100': 25,
+    'min_candles_between': 3,
+    'max_trade_duration': 80,
+
+    'enable_trend_filter': True,
+    'trend_strength_threshold': 0.005,
+    'enable_volume_filter': False,
+    'enable_volatility_filter': False,
+    'enable_short_trades': True,
+
+    'enable_trailing_stop': True,
+    'trailing_activation_percent': 1.0,
+    'trailing_stop_atr_multiplier': 1.2,
+    'enable_partial_exit': True,
+    'partial_exit_ratio': 0.5,
+    'partial_exit_threshold': 1.0,
+
+    # Disable strict MTF gating for H1 to avoid over-filtering entries
+    'enable_mtf': False
+}
+
 # تنظیمات بر اساس شرایط مختلف بازار
 MARKET_CONDITION_PARAMS = {
     "TRENDING": {
@@ -196,11 +299,14 @@ def get_best_params_for_timeframe(timeframe: str) -> dict:
     """
     انتخاب بهترین پارامترها بر اساس تایم‌فریم
     """
-    if timeframe in ['M1', 'M5']:
-        return AGGRESSIVE_PARAMS.copy()
-    elif timeframe in ['M15', 'M30']:
-        return OPTIMIZED_PARAMS_V4.copy()
-    elif timeframe in ['H1', 'H4']:
+    tf = (timeframe or '').upper()
+    if tf in ['M1', 'M5']:
+        return ENSEMBLE_SCALPING_M5.copy()
+    elif tf in ['M15', 'M30']:
+        return ENSEMBLE_INTRADAY_M15.copy()
+    elif tf == 'H1':
+        return ENHANCED_INTRADAY_H1.copy()
+    elif tf == 'H4':
         return OPTIMIZED_PARAMS_V4.copy()
     else:  # D1, W1
         return CONSERVATIVE_PARAMS.copy()

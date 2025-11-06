@@ -134,23 +134,49 @@ class EnhancedRSIBacktestV4:
         try:
             # RSI
             data = self._calculate_rsi(data, 14)
-            
+
             # میانگین‌های متحرک
             data['EMA_9'] = data['close'].ewm(span=9).mean()
             data['EMA_21'] = data['close'].ewm(span=21).mean()
             data['EMA_50'] = data['close'].ewm(span=50).mean()
-            
+
             # ATR
             data['ATR'] = self._calculate_atr_series(data)
-            
+
             # باندهای بولینگر
             data = self._calculate_bollinger_bands(data)
-            
+
+            # BB Width (برای تشخیص رِنج/انبساط)
+            try:
+                bb_mid = data['BB_Middle'].replace(0, np.nan)
+                data['BB_Width'] = (data['BB_Upper'] - data['BB_Lower']) / bb_mid
+                data['BB_Width'] = data['BB_Width'].replace([np.inf, -np.inf], np.nan).fillna(0)
+            except Exception:
+                data['BB_Width'] = 0.0
+
             # MACD
             data = self._calculate_macd(data)
-            
+
+            # ADX + DIs (قدرت روند)
+            try:
+                data = self._calculate_adx(data, period=14)
+            except Exception:
+                pass
+
+            # Keltner Channels (برای انقباض/انبساط نوسان)
+            try:
+                data = self._calculate_keltner_channels(data, period=20, mult=2.0)
+            except Exception:
+                pass
+
+            # Donchian Channels (برای شکست محدوده)
+            try:
+                data = self._calculate_donchian_channels(data, period=20)
+            except Exception:
+                pass
+
             return data
-            
+
         except Exception as e:
             logger.error(f"خطا در محاسبه اندیکاتورها: {e}")
             return data
@@ -215,10 +241,82 @@ class EnhancedRSIBacktestV4:
             data['MACD'] = exp1 - exp2
             data['MACD_Signal'] = data['MACD'].ewm(span=signal).mean()
             data['MACD_Histogram'] = data['MACD'] - data['MACD_Signal']
-            
+
             return data
         except Exception as e:
             logger.error(f"خطا در محاسبه MACD: {e}")
+            return data
+
+    def _calculate_adx(self, data: pd.DataFrame, period: int = 14) -> pd.DataFrame:
+        """محاسبه ADX و DI+ / DI- برای سنجش قدرت روند (Wilder Smoothing)"""
+        try:
+            high = data['high']
+            low = data['low']
+            close = data['close']
+
+            up_move = high.diff()
+            down_move = (-low.diff())
+
+            plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0.0)
+            minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0.0)
+
+            tr1 = (high - low)
+            tr2 = (high - close.shift()).abs()
+            tr3 = (low - close.shift()).abs()
+            true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+            atr = true_range.ewm(alpha=1/period, adjust=False).mean()
+
+            plus_dm_sm = pd.Series(plus_dm, index=data.index).ewm(alpha=1/period, adjust=False).mean()
+            minus_dm_sm = pd.Series(minus_dm, index=data.index).ewm(alpha=1/period, adjust=False).mean()
+
+            plus_di = 100 * (plus_dm_sm / atr.replace(0, np.nan))
+            minus_di = 100 * (minus_dm_sm / atr.replace(0, np.nan))
+
+            dx = 100 * (np.abs(plus_di - minus_di) / (plus_di + minus_di).replace(0, np.nan))
+            adx = dx.ewm(alpha=1/period, adjust=False).mean()
+
+            data['PLUS_DI'] = plus_di.fillna(0)
+            data['MINUS_DI'] = minus_di.fillna(0)
+            data['ADX'] = adx.fillna(0)
+
+            return data
+        except Exception as e:
+            logger.error(f"خطا در محاسبه ADX: {e}")
+            data['PLUS_DI'] = 0.0
+            data['MINUS_DI'] = 0.0
+            data['ADX'] = 0.0
+            return data
+
+    def _calculate_keltner_channels(self, data: pd.DataFrame, period: int = 20, mult: float = 2.0) -> pd.DataFrame:
+        """محاسبه Keltner Channels بر اساس EMA و ATR"""
+        try:
+            middle = data['close'].ewm(span=period).mean()
+            atr = data['ATR'] if 'ATR' in data.columns else self._calculate_atr_series(data, period)
+            upper = middle + (atr * mult)
+            lower = middle - (atr * mult)
+
+            data['KC_Middle'] = middle
+            data['KC_Upper'] = upper
+            data['KC_Lower'] = lower
+            return data
+        except Exception as e:
+            logger.error(f"خطا در محاسبه Keltner Channels: {e}")
+            return data
+
+    def _calculate_donchian_channels(self, data: pd.DataFrame, period: int = 20) -> pd.DataFrame:
+        """محاسبه Donchian Channels برای تشخیص شکست محدوده"""
+        try:
+            upper = data['high'].rolling(period).max()
+            lower = data['low'].rolling(period).min()
+            middle = (upper + lower) / 2.0
+
+            data['DC_Upper'] = upper
+            data['DC_Lower'] = lower
+            data['DC_Middle'] = middle
+            return data
+        except Exception as e:
+            logger.error(f"خطا در محاسبه Donchian Channels: {e}")
             return data
 
     def _attach_mtf_to_base(self, base_df: pd.DataFrame, symbol: str, days_back: int, timeframes: List[str]) -> pd.DataFrame:
@@ -281,8 +379,25 @@ class EnhancedRSIBacktestV4:
             # دریافت داده
             data = self.fetch_real_data_from_mt5(symbol, timeframe, days_back)
             
-            # ایجاد استراتژی
-            strategy = EnhancedRsiStrategyV4(**strategy_params)
+            # ایجاد استراتژی (پشتیبانی از انتخاب کلاس استراتژی با 'strategy_class')
+            strategy_class_name = strategy_params.pop('strategy_class', None)
+            strategy = None
+            try:
+                if strategy_class_name:
+                    if strategy_class_name == 'EnsembleRsiStrategyV4':
+                        from strategies.ensemble_strategy_v4 import EnsembleRsiStrategyV4
+                        strategy = EnsembleRsiStrategyV4(**strategy_params)
+                    elif strategy_class_name == 'EnhancedRsiStrategyV4':
+                        strategy = EnhancedRsiStrategyV4(**strategy_params)
+                    else:
+                        # در صورت نامعتبر بودن، به نسخه پیش‌فرض برمی‌گردیم
+                        logger.warning(f"Strategy class '{strategy_class_name}' not recognized. Falling back to EnhancedRsiStrategyV4.")
+                        strategy = EnhancedRsiStrategyV4(**strategy_params)
+                else:
+                    strategy = EnhancedRsiStrategyV4(**strategy_params)
+            except Exception as ie:
+                logger.warning(f"Falling back to EnhancedRsiStrategyV4 due to error loading '{strategy_class_name}': {ie}")
+                strategy = EnhancedRsiStrategyV4(**strategy_params)
 
             # ضمیمه‌کردن ویژگی‌های MTF در صورت فعال‌بودن
             try:
@@ -504,6 +619,7 @@ class EnhancedRSIBacktestV4:
             'trade_history': trade_history,
             'signal_log': signal_log,
             'symbol': symbol,
+            'strategy_name': strategy.__class__.__name__,
             'data_info': {
                 'start_date': data.index[0],
                 'end_date': data.index[-1],
@@ -713,10 +829,17 @@ class EnhancedRSIBacktestV4:
         metrics = self.results.get('performance_metrics', {})
         strategy_metrics = self.results.get('strategy_metrics', {})
         data_info = self.results.get('data_info', {})
+        strategy_name = self.results.get('strategy_name', 'EnhancedRsiStrategyV4')
+        if strategy_name == 'EnsembleRsiStrategyV4':
+            strategy_title = 'ENSEMBLE RSI STRATEGY V4'
+        elif strategy_name == 'EnhancedRsiStrategyV4':
+            strategy_title = 'ENHANCED RSI STRATEGY V4'
+        else:
+            strategy_title = strategy_name.upper()
         
         report = [
             "=" * 70,
-            "ENHANCED RSI STRATEGY V4 - COMPREHENSIVE BACKTEST REPORT",
+            f"{strategy_title} - COMPREHENSIVE BACKTEST REPORT",
             "=" * 70,
             f"Symbol: {self.results.get('symbol', 'N/A')}",
             f"Period: {data_info.get('start_date')} to {data_info.get('end_date')}",
@@ -773,54 +896,64 @@ class EnhancedRSIBacktestV4:
         return "\n".join(report)
 
     def optimize_parameters(self, data: pd.DataFrame, param_grid: Dict[str, List]) -> Dict[str, Any]:
-        """بهینه‌سازی پارامترهای استراتژی"""
-        logger.info(">>> شروع بهینه‌سازی پارامترها")
+        """بهینه‌سازی پارامترهای استراتژی (پشتیبانی از Ensemble با strategy_class)"""
+        logger.info(">>> شروع بهینه‌سازی پارامترها (supports Ensemble)")
         
-        best_params = {}
+        best_params: Dict[str, Any] = {}
         best_performance = -float('inf')
         
         try:
-            # ایجاد ترکیب‌های پارامتری
             from itertools import product
-            param_combinations = list(product(*param_grid.values()))
-            
-            logger.info(f">>> تست {len(param_combinations)} ترکیب پارامتری")
-            
-            for i, combination in enumerate(param_combinations):
-                params = dict(zip(param_grid.keys(), combination))
-                
+            import inspect
+
+            # Build combinations
+            keys = list(param_grid.keys())
+            combinations = list(product(*param_grid.values()))
+            logger.info(f">>> تست {len(combinations)} ترکیب پارامتری")
+
+            for i, combo in enumerate(combinations):
+                params = dict(zip(keys, combo))
+                strategy_class_name = params.get('strategy_class', 'EnhancedRsiStrategyV4')
+
                 try:
-                    # اجرای بکتست با پارامترهای فعلی
-                    strategy = EnhancedRsiStrategyV4(**params)
-                    
-                    # شبیه‌سازی سریع
+                    # Select and instantiate the correct strategy class with signature-based filtering
+                    target_cls = EnhancedRsiStrategyV4
+                    if strategy_class_name == 'EnsembleRsiStrategyV4':
+                        from strategies.ensemble_strategy_v4 import EnsembleRsiStrategyV4
+                        target_cls = EnsembleRsiStrategyV4
+
+                    sig = inspect.signature(target_cls.__init__)
+                    valid = set(sig.parameters.keys())
+                    valid.discard('self')
+                    filtered = {k: v for k, v in params.items() if k in valid}
+
+                    strategy = target_cls(**filtered)
+
+                    # Quick simulation loop (same style as previous quick test)
                     portfolio_values = []
                     for j in range(50, len(data)):
                         current_data = data.iloc[:j+1].copy()
-                        signal = strategy.generate_signal(current_data, j)
-                        
-                        # محاسبه ارزش پورتفو
-                        portfolio_value = self._calculate_portfolio_value(strategy, current_data)
-                        portfolio_values.append(portfolio_value)
-                    
-                    # ارزیابی عملکرد
+                        _ = strategy.generate_signal(current_data, j)
+                        pv = self._calculate_portfolio_value(strategy, current_data)
+                        portfolio_values.append(pv)
+
                     final_value = portfolio_values[-1] if portfolio_values else self.initial_capital
                     performance = (final_value - self.initial_capital) / self.initial_capital
-                    
+
                     if performance > best_performance:
                         best_performance = performance
                         best_params = params.copy()
-                    
-                    if (i + 1) % 100 == 0:
-                        logger.info(f"🔧 بهینه‌سازی: {i + 1}/{len(param_combinations)}")
-                        
+
+                    if (i + 1) % 100 == 0 or (i + 1) == len(combinations):
+                        logger.info(f"🔧 بهینه‌سازی: {i + 1}/{len(combinations)} - بهترین عملکرد فعلی: {best_performance:.2%}")
+
                 except Exception as e:
                     logger.warning(f"خطا در ترکیب {params}: {e}")
                     continue
-            
+
             logger.info(f">>> بهینه‌سازی تکمیل شد. بهترین عملکرد: {best_performance:.2%}")
             return best_params
-            
+
         except Exception as e:
             logger.error(f"خطا در بهینه‌سازی: {e}")
             return OPTIMIZED_PARAMS_V4

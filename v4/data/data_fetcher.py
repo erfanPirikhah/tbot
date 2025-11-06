@@ -120,13 +120,24 @@ class DataFetcher:
     def fetch_cryptocompare_data(self, symbol: str, interval: str, limit: int = 100) -> pd.DataFrame:
         """Fetch data from CryptoCompare"""
         try:
-            from config.market_config import CRYPTOCOMPARE_INTERVAL_MAP
+            from config.market_config import TIMEFRAME_MAPPING
             
-            interval_param = CRYPTOCOMPARE_INTERVAL_MAP.get(interval)
+            # Robust alias resolution to accept MT5-style, English, and Persian labels
+            alias_map = {
+                'M1': '1m', 'M5': '5m', 'M15': '15m', 'M30': '30m',
+                'H1': '1h', 'H4': '4h', 'D1': '1d', 'W1': '1w',
+                '1m': '1m', '5m': '5m', '15m': '15m', '30m': '30m',
+                '1h': '1h', '4h': '4h', '1d': '1d', '1w': '1w',
+                '۱ دقیقه': '1m', '۵ دقیقه': '5m', '۱۵ دقیقه': '15m', '۳۰ دقیقه': '30m',
+                '۱ ساعت': '1h', '۴ ساعت': '4h', '۱ روز': '1d', '۱ هفته': '1w',
+            }
+            
+            key = (interval or '').strip()
+            interval_param = alias_map.get(key) or TIMEFRAME_MAPPING.get("CRYPTOCOMPARE", {}).get(key)
             
             if not interval_param:
                 raise ValueError(f"❌ Timeframe '{interval}' not supported.")
-
+            
             logger.info(f"🔍 Fetching data from CryptoCompare for {symbol} ({interval_param})")
 
             # Data limit

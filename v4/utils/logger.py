@@ -25,7 +25,17 @@ def setup_logger(
     """
     logger = logging.getLogger(name)
     logger.setLevel(level)
-    
+
+    # Force UTF-8 for stdout to avoid UnicodeEncodeError on Windows cp1252 consoles
+    try:
+        import os
+        os.environ["PYTHONIOENCODING"] = "UTF-8"
+        os.environ["PYTHONUTF8"] = "1"
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
     # جلوگیری از ایجاد هندلرهای تکراری
     if logger.handlers:
         return logger
@@ -35,9 +45,18 @@ def setup_logger(
         datefmt='%Y-%m-%d %H:%M:%S'
     )
     
-    # هندلر کنسول
+    # هندلر کنسول (UTF-8 safe)
     if log_to_console:
-        console_handler = logging.StreamHandler(sys.stdout)
+        stdout_stream = sys.stdout
+        try:
+            if hasattr(sys.stdout, "reconfigure"):
+                sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+            import io
+            if not (getattr(stdout_stream, "encoding", "") or "").lower().startswith("utf"):
+                stdout_stream = io.TextIOWrapper(stdout_stream.buffer, encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+        console_handler = logging.StreamHandler(stdout_stream)
         console_handler.setLevel(level)
         console_handler.setFormatter(formatter)
         logger.addHandler(console_handler)
