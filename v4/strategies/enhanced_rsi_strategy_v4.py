@@ -1,4 +1,4 @@
-# strategies/enhanced_rsi_strategy_v4.py
+# strategies/enhanced_rsi_strategy_v4.py - FIXED VERSION
 
 import pandas as pd
 import numpy as np
@@ -7,7 +7,6 @@ from dataclasses import dataclass, field
 from enum import Enum
 import logging
 from datetime import datetime
-import traceback
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +38,7 @@ class Trade:
     take_profit: float = 0.0
     initial_stop_loss: float = 0.0
     trailing_stop: float = 0.0
+    highest_profit: float = 0.0  # 🔥 NEW: Track highest profit
     exit_price: Optional[float] = None
     exit_time: Optional[pd.Timestamp] = None
     exit_reason: Optional[ExitReason] = None
@@ -62,81 +62,85 @@ class Trade:
 
 class EnhancedRsiStrategyV4:
     """
-    استراتژی RSI نسخه ۴ - کاملاً بازنویسی و بهینه‌شده
-    با فیلترهای پیشرفته و مدیریت ریسک بهبود یافته
+    🔥 OPTIMIZED VERSION - بهینه‌شده برای سودآوری بالاتر
     """
     
     def __init__(
         self,
-        # پارامترهای اصلی RSI
-        rsi_period: int = 11,
-        rsi_oversold: int = 28,
-        rsi_overbought: int = 72,
-        rsi_entry_buffer: int = 2,
+        # Core RSI - بهینه‌شده
+        rsi_period: int = 14,  # 🔥 Changed: از 11 به 14 (استاندارد)
+        rsi_oversold: int = 35,  # 🔥 Changed: از 28 به 35 (تعادل بهتر)
+        rsi_overbought: int = 65,  # 🔥 Changed: از 72 به 65
+        rsi_entry_buffer: int = 5,  # 🔥 Changed: از 2 به 5 (انعطاف بیشتر)
         
-        # مدیریت ریسک
-        risk_per_trade: float = 0.008,
-        stop_loss_atr_multiplier: float = 1.8,
-        take_profit_ratio: float = 2.2,
-        min_position_size: float = 800,
-        max_position_size_ratio: float = 0.25,
+        # Risk Management - بهبود یافته
+        risk_per_trade: float = 0.015,  # 🔥 Changed: از 0.008 به 0.015
+        stop_loss_atr_multiplier: float = 2.0,  # 🔥 Changed: از 1.8 به 2.0
+        take_profit_ratio: float = 2.5,  # 🔥 Changed: از 2.2 به 2.5
+        min_position_size: float = 100,  # 🔥 Changed: از 800 به 100
+        max_position_size_ratio: float = 0.3,  # 🔥 Changed: از 0.25 به 0.3
         
-        # کنترل معاملات
-        max_trades_per_100: int = 20,
-        min_candles_between: int = 8,
-        max_trade_duration: int = 75,
+        # Trade Control - منطقی‌تر
+        max_trades_per_100: int = 30,  # 🔥 Changed: از 20 به 30
+        min_candles_between: int = 5,  # 🔥 Changed: از 8 به 5
+        max_trade_duration: int = 100,  # 🔥 Changed: از 75 به 100
         
-        # فیلترها
-        enable_trend_filter: bool = True,
-        trend_strength_threshold: float = 0.008,
+        # Filters - انعطاف‌پذیرتر
+        enable_trend_filter: bool = False,  # 🔥 Changed: غیرفعال شد
+        trend_strength_threshold: float = 0.005,  # 🔥 Changed: کاهش یافت
         enable_volume_filter: bool = False,
-        enable_volatility_filter: bool = True,
+        enable_volatility_filter: bool = False,  # 🔥 Changed: غیرفعال شد
         enable_short_trades: bool = True,
         
-        # ویژگی‌های پیشرفته
+        # Advanced - بهینه‌شده
         enable_trailing_stop: bool = True,
-        trailing_activation_percent: float = 0.4,
-        trailing_stop_atr_multiplier: float = 1.0,
+        trailing_activation_percent: float = 1.0,  # 🔥 Changed: از 0.4 به 1.0%
+        trailing_stop_atr_multiplier: float = 1.5,  # 🔥 Changed: از 1.0 به 1.5
         enable_partial_exit: bool = True,
         partial_exit_ratio: float = 0.5,
-        partial_exit_threshold: float = 0.8,
+        partial_exit_threshold: float = 1.5,  # 🔥 Changed: از 0.8 به 1.5%
         
-        # کنترل ضرر
-        max_consecutive_losses: int = 3,
-        pause_after_losses: int = 20,
-        risk_reduction_after_loss: bool = True,
+        # Loss Control - متعادل‌تر
+        max_consecutive_losses: int = 4,  # 🔥 Changed: از 3 به 4
+        pause_after_losses: int = 10,  # 🔥 Changed: از 20 به 10
+        risk_reduction_after_loss: bool = False,  # 🔥 Changed: غیرفعال
         
-        # تاییدیه‌ها
-        require_rsi_confirmation: bool = True,
-        require_price_confirmation: bool = True,
-        confirmation_candles: int = 2
+        # Confirmations - ساده‌تر
+        require_rsi_confirmation: bool = False,  # 🔥 Changed: غیرفعال
+        require_price_confirmation: bool = False,  # 🔥 Changed: غیرفعال
+        confirmation_candles: int = 1,  # 🔥 Changed: از 2 به 1
+
+        # Multi-Timeframe Analysis (MTF)
+        enable_mtf: bool = True,
+        mtf_timeframes: Optional[List[str]] = None,   # e.g., ['H4','D1']
+        mtf_require_all: bool = True,                 # require all HTFs to align, else any-one
+        mtf_long_rsi_min: float = 50.0,               # min RSI on HTFs for LONG
+        mtf_short_rsi_max: float = 50.0,              # max RSI on HTFs for SHORT
+        mtf_trend_ema_fast: int = 21,                 # fast EMA used for HTF trend
+        mtf_trend_ema_slow: int = 50                  # slow EMA used for HTF trend
     ):
-        # پارامترهای اصلی
+        # Initialize all parameters
         self.rsi_period = rsi_period
         self.rsi_oversold = rsi_oversold
         self.rsi_overbought = rsi_overbought
         self.rsi_entry_buffer = rsi_entry_buffer
         
-        # مدیریت ریسک
         self.risk_per_trade = risk_per_trade
         self.stop_loss_atr_multiplier = stop_loss_atr_multiplier
         self.take_profit_ratio = take_profit_ratio
         self.min_position_size = min_position_size
         self.max_position_size_ratio = max_position_size_ratio
         
-        # کنترل معاملات
         self.max_trades_per_100 = max_trades_per_100
         self.min_candles_between = min_candles_between
         self.max_trade_duration = max_trade_duration
         
-        # فیلترها
         self.enable_trend_filter = enable_trend_filter
         self.trend_strength_threshold = trend_strength_threshold
         self.enable_volume_filter = enable_volume_filter
         self.enable_volatility_filter = enable_volatility_filter
         self.enable_short_trades = enable_short_trades
         
-        # ویژگی‌های پیشرفته
         self.enable_trailing_stop = enable_trailing_stop
         self.trailing_activation_percent = trailing_activation_percent
         self.trailing_stop_atr_multiplier = trailing_stop_atr_multiplier
@@ -144,15 +148,22 @@ class EnhancedRsiStrategyV4:
         self.partial_exit_ratio = partial_exit_ratio
         self.partial_exit_threshold = partial_exit_threshold
         
-        # کنترل ضرر
         self.max_consecutive_losses = max_consecutive_losses
         self.pause_after_losses = pause_after_losses
         self.risk_reduction_after_loss = risk_reduction_after_loss
         
-        # تاییدیه‌ها
         self.require_rsi_confirmation = require_rsi_confirmation
         self.require_price_confirmation = require_price_confirmation
         self.confirmation_candles = confirmation_candles
+
+        # MTF configuration
+        self.enable_mtf = enable_mtf
+        self.mtf_timeframes = mtf_timeframes or ['H4', 'D1']
+        self.mtf_require_all = mtf_require_all
+        self.mtf_long_rsi_min = mtf_long_rsi_min
+        self.mtf_short_rsi_max = mtf_short_rsi_max
+        self.mtf_trend_ema_fast = mtf_trend_ema_fast
+        self.mtf_trend_ema_slow = mtf_trend_ema_slow
         
         # State variables
         self._position = PositionType.OUT
@@ -164,49 +175,23 @@ class EnhancedRsiStrategyV4:
         self._pause_until_index = -1
         self._original_risk = risk_per_trade
         
-        # آمارها
+        # Statistics
         self._total_trades = 0
         self._winning_trades = 0
         self._total_pnl = 0.0
         self._gross_profit = 0.0
         self._gross_loss = 0.0
         
-        # لاگ‌های حرفه‌ای
+        # Logs
         self._signal_log = []
         self._market_condition = "UNKNOWN"
         
-        logger.info(">>> Enhanced RSI Strategy V4 Initialized")
-        logger.info(f"    RSI({rsi_period}), OS: {rsi_oversold}, OB: {rsi_overbought}")
-        logger.info(f"    Risk: {risk_per_trade*100}%, SL: {stop_loss_atr_multiplier}ATR, TP: {take_profit_ratio}:1")
-
-    def _log_signal(self, signal_type: str, details: Dict[str, Any]):
-        """لاگ حرفه‌ای برای تمام سیگنال‌ها"""
-        log_entry = {
-            'timestamp': datetime.now(),
-            'type': signal_type,
-            'position': self._position.value,
-            'portfolio_value': round(self._portfolio_value, 2),
-            'market_condition': self._market_condition,
-            'consecutive_losses': self._consecutive_losses,
-            'details': details
-        }
-        self._signal_log.append(log_entry)
-        
-        # تبدیل مقادیر numpy به float برای نمایش بهتر
-        formatted_details = {}
-        for key, value in details.items():
-            if hasattr(value, 'dtype'):  # اگر numpy type است
-                formatted_details[key] = float(value)
-            else:
-                formatted_details[key] = value
-        
-        logger.info(f"SIGNAL {signal_type}: {formatted_details}")
+        logger.info(f"🔥 OPTIMIZED RSI Strategy V4 - RSI({rsi_period}), Risk: {risk_per_trade*100}%")
 
     def _calculate_rsi(self, data: pd.DataFrame) -> pd.DataFrame:
         """محاسبه RSI با مدیریت خطا"""
         try:
             if len(data) < self.rsi_period + 1:
-                logger.warning(f"    داده کافی برای محاسبه RSI نیست: {len(data)} کندل")
                 return data
                 
             delta = data['close'].diff()
@@ -218,30 +203,25 @@ class EnhancedRsiStrategyV4:
             
             rs = avg_gain / avg_loss
             data['RSI'] = 100 - (100 / (1 + rs))
-            
-            # پر کردن مقادیر NaN
             data['RSI'] = data['RSI'].fillna(method='bfill').fillna(50)
             
-            logger.debug(f"    RSI calculated: {data['RSI'].iloc[-1]:.2f}")
             return data
             
         except Exception as e:
-            logger.error(f"    خطا در محاسبه RSI: {e}")
+            logger.error(f"Error calculating RSI: {e}")
             data['RSI'] = 50
             return data
 
     def calculate_atr(self, data: pd.DataFrame, period: int = 14) -> float:
-        """محاسبه ATR با مدیریت خطاهای پیشرفته"""
+        """محاسبه ATR"""
         try:
             if len(data) < period + 1:
-                logger.warning(f"    داده کافی برای ATR نیست: {len(data)} کندل")
-                return data['close'].iloc[-1] * 0.01
+                return data['close'].iloc[-1] * 0.015  # 🔥 Changed: از 0.01 به 0.015
             
             high = data['high']
             low = data['low']
             close = data['close']
             
-            # محاسبه True Range
             tr1 = high - low
             tr2 = abs(high - close.shift())
             tr3 = abs(low - close.shift())
@@ -250,324 +230,172 @@ class EnhancedRsiStrategyV4:
             atr = true_range.rolling(window=period).mean().iloc[-1]
             
             if pd.isna(atr) or atr <= 0:
-                atr = data['close'].iloc[-1] * 0.01
+                atr = data['close'].iloc[-1] * 0.015
                 
-            logger.debug(f"    ATR calculated: {atr:.6f}")
             return atr
             
         except Exception as e:
-            logger.error(f"    خطا در محاسبه ATR: {e}")
-            return data['close'].iloc[-1] * 0.01
-
-    def _calculate_volatility(self, data: pd.DataFrame, period: int = 20) -> float:
-        """محاسبه نوسان بازار"""
-        try:
-            returns = data['close'].pct_change().dropna()
-            volatility = returns.rolling(window=period).std().iloc[-1]
-            return volatility if not pd.isna(volatility) else 0.0
-        except Exception as e:
-            logger.error(f"خطا در محاسبه نوسان: {e}")
-            return 0.0
-
-    def _detect_market_condition(self, data: pd.DataFrame) -> str:
-        """تشخیص شرایط بازار"""
-        try:
-            volatility = self._calculate_volatility(data)
-            atr = self.calculate_atr(data)
-            current_price = data['close'].iloc[-1]
-            
-            # محاسبه روند
-            ema_fast = data['close'].ewm(span=9).mean().iloc[-1]
-            ema_medium = data['close'].ewm(span=21).mean().iloc[-1]
-            ema_slow = data['close'].ewm(span=50).mean().iloc[-1]
-            
-            trend_strength = abs(ema_fast - ema_medium) / ema_medium
-            
-            # تشخیص شرایط
-            if volatility > 0.015:  # نوسان بالا
-                condition = "VOLATILE"
-            elif trend_strength > 0.01:  # روند قوی
-                if ema_fast > ema_medium > ema_slow:
-                    condition = "TRENDING_BULLISH"
-                else:
-                    condition = "TRENDING_BEARISH"
-            elif trend_strength < 0.003:  # روند ضعیف
-                condition = "RANGING"
-            else:
-                condition = "MIXED"
-                
-            self._market_condition = condition
-            logger.debug(f"    Market Condition: {condition} (Vol: {volatility:.4f}, Trend: {trend_strength:.4f})")
-            return condition
-            
-        except Exception as e:
-            logger.error(f"خطا در تشخیص شرایط بازار: {e}")
-            return "UNKNOWN"
+            logger.error(f"Error calculating ATR: {e}")
+            return data['close'].iloc[-1] * 0.015
 
     def calculate_position_size(self, entry_price: float, stop_loss: float) -> float:
-        """محاسبه سایز پوزیشن با مدیریت ریسک پیشرفته"""
+        """🔥 IMPROVED: محاسبه Position Size بهبود یافته"""
         try:
-            # کاهش ریسک در صورت ضررهای متوالی
+            # 🔥 کاهش ریسک فقط اگر فعال باشد
             current_risk = self.risk_per_trade
             if self.risk_reduction_after_loss and self._consecutive_losses > 0:
-                risk_reduction = max(0.5, 1.0 - (self._consecutive_losses * 0.1))
+                risk_reduction = max(0.7, 1.0 - (self._consecutive_losses * 0.05))
                 current_risk = self._original_risk * risk_reduction
-                logger.info(f"    کاهش ریسک به {current_risk*100}% بعد از {self._consecutive_losses} ضرر متوالی")
             
             risk_amount = self._portfolio_value * current_risk
             
-            # محاسبه فاصله قیمتی استاپ لاس
+            # محاسبه فاصله قیمتی
             if stop_loss < entry_price:  # LONG
                 price_risk = entry_price - stop_loss
             else:  # SHORT
                 price_risk = stop_loss - entry_price
             
-            # اعتبارسنجی قیمت ریسک
-            if price_risk <= 0 or price_risk > entry_price * 0.05:
-                logger.warning(f"    ریسک قیمتی نامعتبر: {price_risk:.6f}")
+            # 🔥 اعتبارسنجی منطقی‌تر
+            if price_risk <= 0 or price_risk > entry_price * 0.1:  # Changed: از 0.05 به 0.1
+                logger.warning(f"Invalid price risk: {price_risk:.6f}")
                 return 0
             
             position_size = risk_amount / price_risk
             
-            # محدودیت‌های سایز
+            # 🔥 محدودیت‌های واقع‌بینانه‌تر
             max_position = self._portfolio_value * self.max_position_size_ratio
-            min_position = self.min_position_size
-            
             position_size = min(position_size, max_position)
             
-            if position_size < min_position:
-                logger.warning(f"    سایز پوزیشن بسیار کوچک: {position_size:.0f}")
+            if position_size < self.min_position_size:
                 return 0
                 
-            logger.info(f"    Position Size: {position_size:.0f} (Risk: ${risk_amount:.2f})")
+            logger.info(f"Position Size: {position_size:.0f} (Risk: ${risk_amount:.2f})")
             return position_size
             
         except Exception as e:
-            logger.error(f"    خطا در محاسبه سایز پوزیشن: {e}")
+            logger.error(f"Error calculating position size: {e}")
             return 0
 
-    def _check_trend_filter(self, data: pd.DataFrame) -> Tuple[bool, str]:
-        """فیلتر روند بهبود یافته"""
-        if not self.enable_trend_filter:
-            return True, "فیلتر روند غیرفعال"
-            
-        try:
-            if len(data) < 50:
-                return True, "داده ناکافی برای فیلتر روند"
-            
-            # محاسبه EMA با دوره‌های استاندارد
-            ema_fast = data['close'].ewm(span=9).mean()
-            ema_medium = data['close'].ewm(span=21).mean() 
-            ema_slow = data['close'].ewm(span=50).mean()
-            
-            current_ema_fast = ema_fast.iloc[-1]
-            current_ema_medium = ema_medium.iloc[-1]
-            current_ema_slow = ema_slow.iloc[-1]
-            
-            # محاسبه شیب روند
-            trend_strength = abs(current_ema_fast - current_ema_medium) / current_ema_medium
-            
-            # شرایط روند صعودی
-            bullish_condition = (
-                current_ema_fast > current_ema_medium > current_ema_slow and
-                trend_strength > self.trend_strength_threshold
-            )
-            
-            # شرایط روند نزولی
-            bearish_condition = (
-                current_ema_fast < current_ema_medium < current_ema_slow and
-                trend_strength > self.trend_strength_threshold
-            )
-            
-            # شرایط بازار رنج
-            sideways_condition = trend_strength < 0.003
-            
-            if bullish_condition:
-                return True, f"روند صعودی قوی (قدرت: {trend_strength:.4f})"
-            elif bearish_condition:
-                return True, f"روند نزولی قوی (قدرت: {trend_strength:.4f})"
-            elif sideways_condition:
-                return False, f"بازار رنج - عدم ورود (قدرت: {trend_strength:.4f})"
-            else:
-                return False, f"روند ضعیف (قدرت: {trend_strength:.4f})"
-                
-        except Exception as e:
-            logger.error(f"خطا در فیلتر روند: {e}")
-            return True, f"خطا در فیلتر روند: {e}"
-
-    def _check_volatility_filter(self, data: pd.DataFrame) -> Tuple[bool, str]:
-        """فیلتر نوسان برای جلوگیری از معاملات در شرایط پرنوسان"""
-        if not self.enable_volatility_filter:
-            return True, "فیلتر نوسان غیرفعال"
-            
-        try:
-            volatility = self._calculate_volatility(data)
-            
-            if volatility > 0.02:  # نوسان بسیار بالا
-                return False, f"نوسان بسیار بالا: {volatility:.4f}"
-            elif volatility > 0.015:  # نوسان بالا
-                return True, f"نوسان بالا (هشدار): {volatility:.4f}"
-            elif volatility < 0.005:  # نوسان بسیار پایین
-                return False, f"نوسان بسیار پایین: {volatility:.4f}"
-            else:
-                return True, f"نوسان نرمال: {volatility:.4f}"
-                
-        except Exception as e:
-            logger.error(f"خطا در فیلتر نوسان: {e}")
-            return True, f"خطا در فیلتر نوسان: {e}"
-
-    def _check_rsi_confirmation(self, data: pd.DataFrame, position_type: PositionType) -> Tuple[bool, str]:
-        """تاییدیه RSI برای ورود مطمئن‌تر"""
-        if not self.require_rsi_confirmation:
-            return True, "تاییدیه RSI غیرفعال"
-            
-        try:
-            if len(data) < self.confirmation_candles + 1:
-                return True, "داده ناکافی برای تاییدیه"
-            
-            current_rsi = data['RSI'].iloc[-1]
-            previous_rsi = data['RSI'].iloc[-2]
-            
-            if position_type == PositionType.LONG:
-                # تاییدیه: RSI باید در حال بهبود باشد
-                confirmation = current_rsi > previous_rsi
-                reason = f"تاییدیه LONG: RSI از {previous_rsi:.1f} به {current_rsi:.1f}"
-            else:  # SHORT
-                # تاییدیه: RSI باید در حال کاهش باشد
-                confirmation = current_rsi < previous_rsi
-                reason = f"تاییدیه SHORT: RSI از {previous_rsi:.1f} به {current_rsi:.1f}"
-            
-            return confirmation, reason
-            
-        except Exception as e:
-            logger.error(f"خطا در تاییدیه RSI: {e}")
-            return True, f"خطا در تاییدیه RSI: {e}"
-
     def check_entry_conditions(self, data: pd.DataFrame, position_type: PositionType) -> Tuple[bool, List[str]]:
-        """شرایط ورود پیشرفته با فیلترهای چندلایه"""
-        conditions = []
-        
+        """🔥 SIMPLIFIED + MTF: شرایط ورود با پشتیبانی از Multi-Timeframe"""
+        conditions: List[str] = []
         try:
-            # محاسبه RSI اگر وجود ندارد
+            # Ensure RSI present for base timeframe
             if 'RSI' not in data.columns:
                 data = self._calculate_rsi(data)
-            
-            current_rsi = data['RSI'].iloc[-1]
-            current_price = data['close'].iloc[-1]
-            
-            # تشخیص شرایط بازار
-            self._detect_market_condition(data)
-            
-            # بررسی RSI اصلی
+
+            current_rsi = float(data['RSI'].iloc[-1]) if 'RSI' in data.columns else 50.0
+
+            # Base RSI gate
             if position_type == PositionType.LONG:
                 rsi_condition = current_rsi <= (self.rsi_oversold + self.rsi_entry_buffer)
                 if not rsi_condition:
-                    return False, [f"RSI برای LONG مناسب نیست ({current_rsi:.1f} > {self.rsi_oversold + self.rsi_entry_buffer})"]
-                conditions.append(f"RSI در ناحیه خرید ({current_rsi:.1f})")
-                
+                    return False, [f"RSI not suitable for LONG ({current_rsi:.1f})"]
+                conditions.append(f"RSI in BUY zone ({current_rsi:.1f})")
             elif position_type == PositionType.SHORT:
                 rsi_condition = current_rsi >= (self.rsi_overbought - self.rsi_entry_buffer)
                 if not rsi_condition:
-                    return False, [f"RSI برای SHORT مناسب نیست ({current_rsi:.1f} < {self.rsi_overbought - self.rsi_entry_buffer})"]
-                conditions.append(f"RSI در ناحیه فروش ({current_rsi:.1f})")
-            
-            # تاییدیه RSI
-            rsi_confirm, rsi_reason = self._check_rsi_confirmation(data, position_type)
-            if not rsi_confirm:
-                return False, [f"تاییدیه RSI: {rsi_reason}"]
-            conditions.append(rsi_reason)
-            
-            # فیلتر روند
-            trend_ok, trend_reason = self._check_trend_filter(data)
-            if not trend_ok:
-                return False, [f"فیلتر روند: {trend_reason}"]
-            conditions.append(f"روند: {trend_reason}")
-            
-            # فیلتر نوسان
-            vol_ok, vol_reason = self._check_volatility_filter(data)
-            if not vol_ok:
-                return False, [f"فیلتر نوسان: {vol_reason}"]
-            conditions.append(vol_reason)
-            
-            # فیلتر حجم (اختیاری)
-            if self.enable_volume_filter and 'volume' in data.columns:
-                if len(data) > 20:
-                    avg_volume = data['volume'].rolling(20).mean().iloc[-1]
-                    current_volume = data['volume'].iloc[-1]
-                    volume_ratio = current_volume / avg_volume if avg_volume > 0 else 1
-                    
-                    if volume_ratio > 0.8:
-                        conditions.append(f"حجم معاملات مناسب ({volume_ratio:.2f}x)")
-                    else:
-                        conditions.append(f"حجم پایین ({volume_ratio:.2f}x - هشدار)")
-            
-            # بررسی فاصله از آخرین معامله
+                    return False, [f"RSI not suitable for SHORT ({current_rsi:.1f})"]
+                conditions.append(f"RSI in SELL zone ({current_rsi:.1f})")
+
+            # Multi-Timeframe alignment gate (uses columns if available)
+            if self.enable_mtf:
+                mtf_ok, mtf_msgs = self._check_mtf_alignment(data, position_type)
+                if not mtf_ok:
+                    return False, [f"MTF filter: {' | '.join(mtf_msgs)}"]
+                # annotate reasons for transparency
+                for msg in mtf_msgs:
+                    conditions.append(f"MTF: {msg}")
+
+            # Distance from last trade
             candles_since_last = len(data) - 1 - self._last_trade_index
             if candles_since_last < self.min_candles_between:
-                return False, [f"فاصله کم از آخرین معامله ({candles_since_last} کندل)"]
-            
-            conditions.append(f"فاصله از آخرین معامله: {candles_since_last} کندل")
-            
-            # بررسی pause بعد از ضرر
-            if len(data) - 1 <= self._pause_until_index:
-                return False, [f"در حالت استراحت بعد از {self._consecutive_losses} ضرر متوالی"]
-            
-            # بررسی محدودیت معاملات
-            recent_trades = len([t for t in self._trade_history[-100:] if t.exit_time])
-            if recent_trades >= self.max_trades_per_100:
-                return False, [f"حد معاملات ({recent_trades}/{self.max_trades_per_100})"]
-            
-            return True, conditions
-            
-        except Exception as e:
-            logger.error(f"    خطا در بررسی شرایط ورود: {e}")
-            return False, [f"خطا در بررسی شرایط: {e}"]
+                return False, [f"Too close to last trade ({candles_since_last} candles)"]
+            conditions.append(f"Gap from last trade: {candles_since_last} candles")
 
-    def calculate_stop_take_profit(self, data: pd.DataFrame, position_type: PositionType, entry_price: float) -> Tuple[float, float]:
-        """محاسبه استاپ و تیک پروفیت با تنظیمات پویا"""
-        try:
-            atr = self.calculate_atr(data)
-            
-            # تنظیم پویا بر اساس شرایط بازار
-            sl_multiplier = self.stop_loss_atr_multiplier
-            tp_multiplier = self.stop_loss_atr_multiplier * self.take_profit_ratio
-            
-            if self._market_condition == "VOLATILE":
-                sl_multiplier *= 1.2  # افزایش استاپ در بازار پرنوسان
-                tp_multiplier *= 1.1  # افزایش جزئی تیک پروفیت
-            
-            if position_type == PositionType.LONG:
-                stop_loss = entry_price - (atr * sl_multiplier)
-                take_profit = entry_price + (atr * tp_multiplier)
-            else:  # SHORT
-                stop_loss = entry_price + (atr * sl_multiplier)
-                take_profit = entry_price - (atr * tp_multiplier)
-            
-            # اطمینان از معقول بودن مقادیر
-            if position_type == PositionType.LONG:
-                if stop_loss >= entry_price:
-                    stop_loss = entry_price * 0.99
-                if take_profit <= entry_price:
-                    take_profit = entry_price * 1.02
-            else:
-                if stop_loss <= entry_price:
-                    stop_loss = entry_price * 1.01
-                if take_profit >= entry_price:
-                    take_profit = entry_price * 0.98
-            
-            logger.info(f"    SL: {stop_loss:.4f}, TP: {take_profit:.4f} (ATR: {atr:.5f}, Multiplier: {sl_multiplier:.1f})")
-            return stop_loss, take_profit
-            
+            # Pause after consecutive losses
+            if len(data) - 1 <= self._pause_until_index:
+                return False, [f"Paused after {self._consecutive_losses} losses"]
+
+            return True, conditions
+
         except Exception as e:
-            logger.error(f"    خطا در محاسبه استاپ/تیک: {e}")
-            # مقادیر پیش‌فرض
+            logger.error(f"Error checking entry conditions: {e}")
+            return False, [f"Error: {e}"]
+
+    def _check_mtf_alignment(self, data: pd.DataFrame, position_type: PositionType) -> Tuple[bool, List[str]]:
+        """
+        بررسی هم‌جهتی تایم‌فریم‌های بالاتر.
+        - از ستون‌های از پیش محاسبه‌شده استفاده می‌کند:
+          RSI_{TF}, EMA_21_{TF}, EMA_50_{TF}, TrendDir_{TF} (1=UP, -1=DOWN, 0=FLAT)
+        - اگر هیچ داده‌ای وجود نداشته باشد، عبور می‌دهد (اثر ندارد).
+        """
+        messages: List[str] = []
+        available = 0
+        passed = 0
+
+        # Which HTFs to inspect
+        timeframes = self.mtf_timeframes or []
+
+        for tf in timeframes:
+            rsi_col = f'RSI_{tf}'
+            ema_fast_col = f'EMA_21_{tf}'
+            ema_slow_col = f'EMA_50_{tf}'
+            trend_col = f'TrendDir_{tf}'
+
+            has_rsi = rsi_col in data.columns and not pd.isna(data[rsi_col].iloc[-1])
+            has_ema = (
+                ema_fast_col in data.columns and ema_slow_col in data.columns and
+                not pd.isna(data[ema_fast_col].iloc[-1]) and not pd.isna(data[ema_slow_col].iloc[-1])
+            )
+            has_trend = trend_col in data.columns and not pd.isna(data[trend_col].iloc[-1])
+
+            # Skip this TF if no usable signals
+            if not (has_rsi or has_ema or has_trend):
+                continue
+
+            available += 1
+            tf_ok = True
+            tf_msgs: List[str] = []
+
             if position_type == PositionType.LONG:
-                return entry_price * 0.985, entry_price * 1.03
+                if has_rsi and float(data[rsi_col].iloc[-1]) < self.mtf_long_rsi_min:
+                    tf_ok = False
+                    tf_msgs.append(f"{tf}: RSI {float(data[rsi_col].iloc[-1]):.1f} < {self.mtf_long_rsi_min}")
+                if has_ema and not (float(data[ema_fast_col].iloc[-1]) >= float(data[ema_slow_col].iloc[-1])):
+                    tf_ok = False
+                    tf_msgs.append(f"{tf}: EMA{self.mtf_trend_ema_fast} < EMA{self.mtf_trend_ema_slow}")
+                if has_trend and int(data[trend_col].iloc[-1]) < 0:
+                    tf_ok = False
+                    tf_msgs.append(f"{tf}: Downtrend")
+            else:  # SHORT
+                if has_rsi and float(data[rsi_col].iloc[-1]) > self.mtf_short_rsi_max:
+                    tf_ok = False
+                    tf_msgs.append(f"{tf}: RSI {float(data[rsi_col].iloc[-1]):.1f} > {self.mtf_short_rsi_max}")
+                if has_ema and not (float(data[ema_fast_col].iloc[-1]) <= float(data[ema_slow_col].iloc[-1])):
+                    tf_ok = False
+                    tf_msgs.append(f"{tf}: EMA{self.mtf_trend_ema_fast} > EMA{self.mtf_trend_ema_slow}")
+                if has_trend and int(data[trend_col].iloc[-1]) > 0:
+                    tf_ok = False
+                    tf_msgs.append(f"{tf}: Uptrend")
+
+            if tf_ok:
+                passed += 1
+                messages.append(f"{tf} aligned")
             else:
-                return entry_price * 1.015, entry_price * 0.97
+                messages.append(" | ".join(tf_msgs) if tf_msgs else f"{tf} misaligned")
+
+        # No MTF data -> do not block entries
+        if available == 0:
+            return True, ["No MTF data - skipped"]
+
+        if self.mtf_require_all:
+            return (passed == available), messages
+        else:
+            return (passed > 0), messages
 
     def check_exit_conditions(self, data: pd.DataFrame, current_index: int) -> Optional[Dict[str, Any]]:
-        """بررسی شرایط خروج پیشرفته"""
+        """🔥 IMPROVED: شرایط خروج بهبود یافته"""
         if self._position == PositionType.OUT or self._current_trade is None:
             return None
 
@@ -582,26 +410,29 @@ class EnhancedRsiStrategyV4:
             else:
                 profit_pct = ((entry_price - current_price) / entry_price) * 100
             
-            # خروج جزئی
+            # 🔥 Track highest profit
+            if profit_pct > self._current_trade.highest_profit:
+                self._current_trade.highest_profit = profit_pct
+            
+            # 🔥 خروج جزئی بهبود یافته
             if (self.enable_partial_exit and 
                 profit_pct >= self.partial_exit_threshold and 
-                not getattr(self._current_trade, 'partial_exit_done', False)):
+                not self._current_trade.partial_exit_done):
                 
                 self._current_trade.partial_exit_done = True
                 partial_quantity = self._current_trade.quantity * self.partial_exit_ratio
                 partial_pnl = (profit_pct / 100) * partial_quantity * entry_price
                 self._portfolio_value += partial_pnl
                 
-                # ثبت خروج جزئی
-                self._current_trade.partial_exits.append({
-                    'time': current_time,
-                    'price': current_price,
-                    'quantity': partial_quantity,
-                    'pnl': partial_pnl,
-                    'reason': 'PARTIAL_TAKE_PROFIT'
-                })
+                # Update trailing stop after partial exit
+                if self.enable_trailing_stop:
+                    atr = self.calculate_atr(data)
+                    if self._position == PositionType.LONG:
+                        self._current_trade.trailing_stop = current_price - (atr * self.trailing_stop_atr_multiplier)
+                    else:
+                        self._current_trade.trailing_stop = current_price + (atr * self.trailing_stop_atr_multiplier)
                 
-                logger.info(f"    خروج جزئی: {self.partial_exit_ratio*100}% در سود {profit_pct:.2f}%")
+                logger.info(f"✅ Partial exit: {self.partial_exit_ratio*100}% at profit {profit_pct:.2f}%")
                 
                 return {
                     "action": "PARTIAL_EXIT",
@@ -612,20 +443,20 @@ class EnhancedRsiStrategyV4:
                     "reason": "PARTIAL_TAKE_PROFIT"
                 }
             
-            # استاپ لاس
+            # Stop Loss
             if self._position == PositionType.LONG and current_price <= self._current_trade.stop_loss:
                 return self._create_exit_signal("STOP_LOSS", current_price, current_time)
             elif self._position == PositionType.SHORT and current_price >= self._current_trade.stop_loss:
                 return self._create_exit_signal("STOP_LOSS", current_price, current_time)
             
-            # تیک پروفیت
+            # Take Profit
             if self._position == PositionType.LONG and current_price >= self._current_trade.take_profit:
                 return self._create_exit_signal("TAKE_PROFIT", current_price, current_time)
             elif self._position == PositionType.SHORT and current_price <= self._current_trade.take_profit:
                 return self._create_exit_signal("TAKE_PROFIT", current_price, current_time)
             
-            # تریلینگ استاپ
-            if self.enable_trailing_stop and abs(profit_pct) >= self.trailing_activation_percent:
+            # 🔥 Trailing Stop بهبود یافته
+            if self.enable_trailing_stop and profit_pct >= self.trailing_activation_percent:
                 atr = self.calculate_atr(data)
                 trailing_atr = atr * self.trailing_stop_atr_multiplier
                 
@@ -633,42 +464,36 @@ class EnhancedRsiStrategyV4:
                     new_trailing = current_price - trailing_atr
                     if new_trailing > self._current_trade.trailing_stop:
                         self._current_trade.trailing_stop = new_trailing
-                        logger.debug(f"    تریلینگ استاپ به‌روزرسانی شد: {new_trailing:.4f}")
+                        logger.debug(f"Trailing stop updated: {new_trailing:.4f}")
                     
                     if current_price <= self._current_trade.trailing_stop:
                         return self._create_exit_signal("TRAILING_STOP", current_price, current_time)
                 
                 else:  # SHORT
                     new_trailing = current_price + trailing_atr
-                    if new_trailing < self._current_trade.trailing_stop:
+                    if new_trailing < self._current_trade.trailing_stop or self._current_trade.trailing_stop == self._current_trade.stop_loss:
                         self._current_trade.trailing_stop = new_trailing
-                        logger.debug(f"    تریلینگ استاپ به‌روزرسانی شد: {new_trailing:.4f}")
+                        logger.debug(f"Trailing stop updated: {new_trailing:.4f}")
                     
                     if current_price >= self._current_trade.trailing_stop:
                         return self._create_exit_signal("TRAILING_STOP", current_price, current_time)
             
-            # زمان خروج
+            # Time Exit
             trade_duration = current_index - self._last_trade_index
             if trade_duration >= self.max_trade_duration:
                 return self._create_exit_signal("TIME_EXIT", current_price, current_time)
             
-            # خروج به دلیل نوسان بالا
-            if self.enable_volatility_filter:
-                volatility = self._calculate_volatility(data)
-                if volatility > 0.025:  # نوسان بسیار بالا
-                    return self._create_exit_signal("VOLATILITY_EXIT", current_price, current_time)
-            
             return None
             
         except Exception as e:
-            logger.error(f"    خطا در بررسی شرایط خروج: {e}")
+            logger.error(f"Error checking exit conditions: {e}")
             return None
 
     def _create_exit_signal(self, exit_reason: str, price: float, time: pd.Timestamp) -> Dict[str, Any]:
         """ایجاد سیگنال خروج"""
         try:
             if self._current_trade is None:
-                return {"action": "HOLD", "reason": "No active trade to exit"}
+                return {"action": "HOLD", "reason": "No active trade"}
             
             entry_price = self._current_trade.entry_price
             quantity = self._current_trade.quantity
@@ -680,27 +505,24 @@ class EnhancedRsiStrategyV4:
             
             pnl_percentage = (pnl_amount / (entry_price * quantity)) * 100
             
-            # به‌روزرسانی پورتفو
+            # Update portfolio
             self._portfolio_value += pnl_amount
             self._total_pnl += pnl_amount
             self._total_trades += 1
             
-            # مدیریت ضررهای متوالی
+            # Track wins/losses
             if pnl_amount < 0:
                 self._consecutive_losses += 1
+                self._gross_loss += abs(pnl_amount)
                 if self._consecutive_losses >= self.max_consecutive_losses:
                     self._pause_until_index = len(self._trade_history) + self.pause_after_losses
-                    logger.warning(f"    {self._consecutive_losses} ضرر متوالی - استراحت برای {self.pause_after_losses} کندل")
+                    logger.warning(f"⚠️ {self._consecutive_losses} consecutive losses - pausing for {self.pause_after_losses} candles")
             else:
                 self._consecutive_losses = 0
                 self._winning_trades += 1
-            
-            if pnl_amount > 0:
                 self._gross_profit += pnl_amount
-            else:
-                self._gross_loss += abs(pnl_amount)
             
-            # ثبت معامله
+            # Record trade
             self._current_trade.exit_price = price
             self._current_trade.exit_time = time
             self._current_trade.pnl_percentage = pnl_percentage
@@ -712,15 +534,7 @@ class EnhancedRsiStrategyV4:
             self._position = PositionType.OUT
             self._current_trade = None
             
-            log_details = {
-                "price": float(price),
-                "exit_reason": exit_reason,
-                "pnl_percentage": round(pnl_percentage, 2),
-                "pnl_amount": round(pnl_amount, 2),
-                "position": old_position.value,
-                "consecutive_losses": self._consecutive_losses
-            }
-            self._log_signal("EXIT", log_details)
+            logger.info(f"🔚 EXIT at {price:.4f}, PnL: {pnl_percentage:.2f}%, Reason: {exit_reason}")
             
             return {
                 "action": "EXIT",
@@ -733,38 +547,107 @@ class EnhancedRsiStrategyV4:
             }
             
         except Exception as e:
-            logger.error(f"    خطا در ایجاد سیگنال خروج: {e}")
+            logger.error(f"Error creating exit signal: {e}")
             return {"action": "HOLD", "reason": f"Exit error: {e}"}
 
-    def generate_signal(self, data: pd.DataFrame, current_index: int = 0) -> Dict[str, Any]:
-        """تولید سیگنال اصلی"""
+    def calculate_stop_take_profit(self, data: pd.DataFrame, position_type: PositionType, entry_price: float) -> Tuple[float, float]:
+        """محاسبه Stop Loss و Take Profit"""
         try:
-            # بررسی خروج اولویت دارد
+            atr = self.calculate_atr(data)
+            
+            sl_multiplier = self.stop_loss_atr_multiplier
+            tp_multiplier = self.stop_loss_atr_multiplier * self.take_profit_ratio
+            
+            if position_type == PositionType.LONG:
+                stop_loss = entry_price - (atr * sl_multiplier)
+                take_profit = entry_price + (atr * tp_multiplier)
+            else:  # SHORT
+                stop_loss = entry_price + (atr * sl_multiplier)
+                take_profit = entry_price - (atr * tp_multiplier)
+            
+            # Validation
+            if position_type == PositionType.LONG:
+                if stop_loss >= entry_price:
+                    stop_loss = entry_price * 0.985
+                if take_profit <= entry_price:
+                    take_profit = entry_price * 1.04
+            else:
+                if stop_loss <= entry_price:
+                    stop_loss = entry_price * 1.015
+                if take_profit >= entry_price:
+                    take_profit = entry_price * 0.96
+            
+            logger.info(f"SL: {stop_loss:.4f}, TP: {take_profit:.4f}")
+            return stop_loss, take_profit
+            
+        except Exception as e:
+            logger.error(f"Error calculating SL/TP: {e}")
+            if position_type == PositionType.LONG:
+                return entry_price * 0.985, entry_price * 1.04
+            else:
+                return entry_price * 1.015, entry_price * 0.96
+
+    def generate_signal(self, data: pd.DataFrame, current_index: int = 0) -> Dict[str, Any]:
+        """تولید سیگنال + ثبت در لاگ سیگنال"""
+        try:
+            # محاسبه RSI در صورت نیاز برای لاگ
+            if 'RSI' not in data.columns:
+                try:
+                    data = self._calculate_rsi(data)
+                except Exception:
+                    pass
+
+            current_time = data.index[-1]
+            current_price = data['close'].iloc[-1]
+            current_rsi = float(data['RSI'].iloc[-1]) if 'RSI' in data.columns else None
+
+            # ابتدا بررسی شرایط خروج (EXIT / PARTIAL_EXIT / TRAILING_STOP ...)
             exit_signal = self.check_exit_conditions(data, current_index)
             if exit_signal:
+                # ثبت لاگ سیگنال خروج
+                self._signal_log.append({
+                    "time": current_time,
+                    "action": exit_signal.get("action", "EXIT"),
+                    "price": float(current_price),
+                    "position": self._position.value if hasattr(self, "_position") else "OUT",
+                    "reason": exit_signal.get("reason") or exit_signal.get("exit_reason", ""),
+                    "pnl_percentage": exit_signal.get("pnl_percentage"),
+                    "rsi": current_rsi
+                })
                 return exit_signal
-            
-            # بررسی شرایط عمومی
+
+            # بررسی‌های پایه
             if len(data) < 50:
-                return {"action": "HOLD", "reason": "داده کافی نیست"}
-            
+                hold = {"action": "HOLD", "reason": "Insufficient data"}
+                self._signal_log.append({
+                    "time": current_time,
+                    "action": "HOLD",
+                    "price": float(current_price),
+                    "position": self._position.value,
+                    "reason": hold["reason"],
+                    "rsi": current_rsi
+                })
+                return hold
+
             if current_index <= self._pause_until_index:
-                return {"action": "HOLD", "reason": f"استراحت بعد از {self._consecutive_losses} ضرر متوالی"}
-            
-            # بررسی محدودیت معاملات
-            recent_trades = len([t for t in self._trade_history[-100:] if t.exit_time])
-            if recent_trades >= self.max_trades_per_100:
-                return {"action": "HOLD", "reason": f"حد معاملات ({recent_trades}/{self.max_trades_per_100})"}
-            
-            current_price = data['close'].iloc[-1]
-            
-            # بررسی LONG
+                hold = {"action": "HOLD", "reason": "Paused after losses"}
+                self._signal_log.append({
+                    "time": current_time,
+                    "action": "HOLD",
+                    "price": float(current_price),
+                    "position": self._position.value,
+                    "reason": hold["reason"],
+                    "rsi": current_rsi
+                })
+                return hold
+
+            # تلاش برای ورود LONG
             if self._position == PositionType.OUT:
                 long_ok, long_conditions = self.check_entry_conditions(data, PositionType.LONG)
                 if long_ok:
                     stop_loss, take_profit = self.calculate_stop_take_profit(data, PositionType.LONG, current_price)
                     position_size = self.calculate_position_size(current_price, stop_loss)
-                    
+
                     if position_size > 0:
                         self._position = PositionType.LONG
                         self._current_trade = Trade(
@@ -777,35 +660,40 @@ class EnhancedRsiStrategyV4:
                             entry_conditions=long_conditions
                         )
                         self._last_trade_index = current_index
-                        
-                        signal_details = {
-                            "price": float(current_price),
-                            "position_size": float(position_size),
-                            "stop_loss": float(stop_loss),
-                            "take_profit": float(take_profit),
-                            "market_condition": self._market_condition,
-                            "conditions": long_conditions
-                        }
-                        self._log_signal("LONG_ENTRY", signal_details)
-                        
-                        return {
+
+                        logger.info(f"🟢 BUY at {current_price:.4f}, Size: {position_size:.0f}")
+
+                        signal = {
                             "action": "BUY",
                             "price": float(current_price),
                             "position_size": float(position_size),
                             "stop_loss": float(stop_loss),
                             "take_profit": float(take_profit),
                             "reason": " | ".join(long_conditions),
-                            "position": "LONG",
-                            "market_condition": self._market_condition
+                            "position": "LONG"
                         }
-            
-            # بررسی SHORT
+
+                        # ثبت لاگ سیگنال ورود
+                        self._signal_log.append({
+                            "time": current_time,
+                            "action": "BUY",
+                            "price": float(current_price),
+                            "position": "LONG",
+                            "stop_loss": float(stop_loss),
+                            "take_profit": float(take_profit),
+                            "rsi": current_rsi,
+                            "reason": " | ".join(long_conditions)
+                        })
+
+                        return signal
+
+            # تلاش برای ورود SHORT
             if self._position == PositionType.OUT and self.enable_short_trades:
                 short_ok, short_conditions = self.check_entry_conditions(data, PositionType.SHORT)
                 if short_ok:
                     stop_loss, take_profit = self.calculate_stop_take_profit(data, PositionType.SHORT, current_price)
                     position_size = self.calculate_position_size(current_price, stop_loss)
-                    
+
                     if position_size > 0:
                         self._position = PositionType.SHORT
                         self._current_trade = Trade(
@@ -818,36 +706,47 @@ class EnhancedRsiStrategyV4:
                             entry_conditions=short_conditions
                         )
                         self._last_trade_index = current_index
-                        
-                        signal_details = {
-                            "price": float(current_price),
-                            "position_size": float(position_size),
-                            "stop_loss": float(stop_loss),
-                            "take_profit": float(take_profit),
-                            "market_condition": self._market_condition,
-                            "conditions": short_conditions
-                        }
-                        self._log_signal("SHORT_ENTRY", signal_details)
-                        
-                        return {
+
+                        logger.info(f"🔴 SELL at {current_price:.4f}, Size: {position_size:.0f}")
+
+                        signal = {
                             "action": "SELL",
                             "price": float(current_price),
                             "position_size": float(position_size),
                             "stop_loss": float(stop_loss),
                             "take_profit": float(take_profit),
                             "reason": " | ".join(short_conditions),
-                            "position": "SHORT",
-                            "market_condition": self._market_condition
+                            "position": "SHORT"
                         }
-            
-            return {
-                "action": "HOLD", 
-                "reason": "منتظر شرایط مناسب",
-                "market_condition": self._market_condition
-            }
-            
+
+                        # ثبت لاگ سیگنال فروش
+                        self._signal_log.append({
+                            "time": current_time,
+                            "action": "SELL",
+                            "price": float(current_price),
+                            "position": "SHORT",
+                            "stop_loss": float(stop_loss),
+                            "take_profit": float(take_profit),
+                            "rsi": current_rsi,
+                            "reason": " | ".join(short_conditions)
+                        })
+
+                        return signal
+
+            # پیش‌فرض: HOLD
+            hold = {"action": "HOLD", "reason": "Waiting for conditions"}
+            self._signal_log.append({
+                "time": current_time,
+                "action": "HOLD",
+                "price": float(current_price),
+                "position": self._position.value,
+                "reason": hold["reason"],
+                "rsi": current_rsi
+            })
+            return hold
+
         except Exception as e:
-            logger.error(f"    خطا در تولید سیگنال: {e}")
+            logger.error(f"Error generating signal: {e}")
             return {"action": "HOLD", "reason": f"Error: {e}"}
 
     def get_performance_metrics(self) -> Dict[str, Any]:
@@ -859,20 +758,18 @@ class EnhancedRsiStrategyV4:
                 "win_rate": 0,
                 "total_pnl": 0,
                 "current_portfolio_value": self._portfolio_value,
-                "consecutive_losses": self._consecutive_losses,
-                "market_condition": self._market_condition
+                "consecutive_losses": self._consecutive_losses
             }
         
         win_rate = (self._winning_trades / self._total_trades) * 100
         profit_factor = self._gross_profit / max(self._gross_loss, 1)
         
-        # محاسبه نسبت شارپ (ساده)
         if self._total_trades > 1:
-            avg_trade_return = self._total_pnl / self._total_trades
             trade_returns = [t.pnl_percentage for t in self._trade_history if t.pnl_percentage is not None]
             if trade_returns:
+                avg_return = np.mean(trade_returns)
                 volatility = np.std(trade_returns)
-                sharpe_ratio = avg_trade_return / max(volatility, 0.001)
+                sharpe_ratio = avg_return / max(volatility, 0.001)
             else:
                 sharpe_ratio = 0
         else:
@@ -891,19 +788,18 @@ class EnhancedRsiStrategyV4:
             "portfolio_return": round(((self._portfolio_value - 10000) / 10000) * 100, 2),
             "consecutive_losses": self._consecutive_losses,
             "current_position": self._position.value,
-            "market_condition": self._market_condition,
             "sharpe_ratio": round(sharpe_ratio, 2),
             "avg_trade_return": round(self._total_pnl / max(self._total_trades, 1), 2)
         }
-
-    def get_signal_log(self) -> List[Dict]:
-        """دریافت لاگ کامل سیگنال‌ها"""
-        return self._signal_log.copy()
 
     def get_trade_history(self) -> List[Trade]:
         """دریافت تاریخچه معاملات"""
         return self._trade_history.copy()
 
+    def get_signal_log(self) -> List[Dict[str, Any]]:
+        """دریافت لاگ سیگنال‌ها"""
+        return self._signal_log.copy()
+    
     def reset_state(self):
         """ریست استراتژی"""
         self._position = PositionType.OUT
@@ -919,7 +815,6 @@ class EnhancedRsiStrategyV4:
         self._gross_profit = 0.0
         self._gross_loss = 0.0
         self._signal_log = []
-        self._market_condition = "UNKNOWN"
         self._original_risk = self.risk_per_trade
         
-        logger.info("    استراتژی V4 ریست شد")
+        logger.info("✅ Strategy V4 reset completed")

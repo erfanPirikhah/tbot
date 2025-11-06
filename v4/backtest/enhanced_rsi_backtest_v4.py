@@ -25,16 +25,9 @@ from config.market_config import SYMBOL_MAPPING, TIMEFRAME_MAPPING, DEFAULT_CONF
 
 warnings.filterwarnings('ignore')
 
-# تنظیمات لاگ‌گیری
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler(f'backtest_v4_log_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log', encoding='utf-8'),
-        logging.StreamHandler()
-    ]
-)
+# تنظیمات لاگ‌گیری - پیکربندی لاگ‌ها به سطح بالاتر واگذار می‌شود
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 class EnhancedRSIBacktestV4:
     """سیستم بکتست نسخه ۴ با تحلیل‌های پیشرفته"""
@@ -46,7 +39,8 @@ class EnhancedRSIBacktestV4:
         slippage: float = 0.0001,
         enable_plotting: bool = True,
         detailed_logging: bool = True,
-        save_trade_logs: bool = True
+        save_trade_logs: bool = True,
+        output_dir: str = os.path.join("logs", "backtests")
     ):
         self.initial_capital = initial_capital
         self.commission = commission
@@ -54,6 +48,29 @@ class EnhancedRSIBacktestV4:
         self.enable_plotting = enable_plotting
         self.detailed_logging = detailed_logging
         self.save_trade_logs = save_trade_logs
+        self.output_dir = output_dir
+        os.makedirs(self.output_dir, exist_ok=True)
+
+        # ایجاد زیرپوشه‌های ساختارمند برای خروجی‌ها
+        self.plots_dir = os.path.join(self.output_dir, "plots")
+        self.trades_dir = os.path.join(self.output_dir, "trades")
+        self.logs_dir = os.path.join(self.output_dir, "logs")
+        os.makedirs(self.plots_dir, exist_ok=True)
+        os.makedirs(self.trades_dir, exist_ok=True)
+        os.makedirs(self.logs_dir, exist_ok=True)
+
+        # اتصال فایل‌هندر به لاگر این ماژول در مسیر مشخص‌شده
+        try:
+            log_path = os.path.join(self.logs_dir, f'backtest_v4_log_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log')
+            if not any(isinstance(h, logging.FileHandler) for h in logger.handlers):
+                fh = logging.FileHandler(log_path, encoding='utf-8')
+                fh.setLevel(logging.INFO)
+                formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+                fh.setFormatter(formatter)
+                logger.addHandler(fh)
+            logger.propagate = True
+        except Exception:
+            pass
         
         self.results = {}
         self.trades_df = None
@@ -204,6 +221,48 @@ class EnhancedRSIBacktestV4:
             logger.error(f"خطا در محاسبه MACD: {e}")
             return data
 
+    def _attach_mtf_to_base(self, base_df: pd.DataFrame, symbol: str, days_back: int, timeframes: List[str]) -> pd.DataFrame:
+        """ضمیمه‌کردن ویژگی‌های HTF/D1 به دیتافریم تایم‌فریم پایه بدون lookahead.
+        ایجاد ستون‌های زیر در base_df (اگر داده موجود باشد):
+          - RSI_{TF}, EMA_21_{TF}, EMA_50_{TF}, TrendDir_{TF} (1=UP, -1=DOWN, 0=FLAT)
+        با ffill روی ایندکس زمانی base_df برای هم‌ترازی ایمن.
+        """
+        try:
+            if base_df is None or base_df.empty or not timeframes:
+                return base_df
+
+            base_idx = base_df.index
+            for tf in timeframes:
+                try:
+                    htf_df = self.fetch_real_data_from_mt5(symbol, tf, days_back)
+                    cols_map = {}
+
+                    if 'RSI' in htf_df.columns:
+                        cols_map[f'RSI_{tf}'] = htf_df['RSI']
+                    if 'EMA_21' in htf_df.columns:
+                        cols_map[f'EMA_21_{tf}'] = htf_df['EMA_21']
+                    if 'EMA_50' in htf_df.columns:
+                        cols_map[f'EMA_50_{tf}'] = htf_df['EMA_50']
+
+                    if cols_map:
+                        tmp = pd.DataFrame(cols_map)
+                        if f'EMA_21_{tf}' in tmp.columns and f'EMA_50_{tf}' in tmp.columns:
+                            trend = np.sign(tmp[f'EMA_21_{tf}'] - tmp[f'EMA_50_{tf}']).replace({np.nan: 0})
+                            tmp[f'TrendDir_{tf}'] = trend
+
+                        # Align HTF snapshots to base timeframe without lookahead
+                        tmp = tmp.reindex(base_idx, method='ffill')
+
+                        for c in tmp.columns:
+                            base_df[c] = tmp[c]
+                except Exception as ie:
+                    logger.warning(f"MTF attach failed for {tf}: {ie}")
+
+            return base_df
+        except Exception as e:
+            logger.error(f"Error attaching MTF features: {e}")
+            return base_df
+
     def run_backtest(
         self,
         symbol: str = "EURUSD",
@@ -224,6 +283,15 @@ class EnhancedRSIBacktestV4:
             
             # ایجاد استراتژی
             strategy = EnhancedRsiStrategyV4(**strategy_params)
+
+            # ضمیمه‌کردن ویژگی‌های MTF در صورت فعال‌بودن
+            try:
+                if getattr(strategy, 'enable_mtf', False):
+                    mtf_tfs = getattr(strategy, 'mtf_timeframes', ['H4', 'D1'])
+                    data = self._attach_mtf_to_base(data, symbol, days_back, mtf_tfs)
+                    logger.info(f"MTF features attached for timeframes: {mtf_tfs}")
+            except Exception as e:
+                logger.warning(f"Failed to attach MTF features: {e}")
             
             # اجرای بکتست
             trades = []
@@ -595,7 +663,8 @@ class EnhancedRSIBacktestV4:
                 ax7.set_title('Market Conditions Distribution')
             
             plt.tight_layout()
-            filename = f"backtest_v4_{symbol}_{timeframe}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+            ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = os.path.join(self.plots_dir, f"backtest_v4_{symbol}_{timeframe}_{ts}.png")
             plt.savefig(filename, dpi=300, bbox_inches='tight')
             plt.close()
             
@@ -626,7 +695,8 @@ class EnhancedRSIBacktestV4:
                 trade_logs.append(trade_log)
             
             # ذخیره به صورت JSON
-            log_filename = f"detailed_trades_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+            log_filename = os.path.join(self.trades_dir, f"detailed_trades_{ts}.json")
             with open(log_filename, 'w', encoding='utf-8') as f:
                 json.dump(trade_logs, f, indent=2, default=str)
             

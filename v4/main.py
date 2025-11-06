@@ -8,6 +8,7 @@ import os
 from datetime import datetime, timedelta
 import warnings
 from typing import Dict, Any, Optional
+import inspect
 
 # Add project paths
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -24,16 +25,18 @@ from config.parameters import OPTIMIZED_PARAMS_V4, MARKET_CONDITION_PARAMS
 from config.market_config import SYMBOL_MAPPING, TIMEFRAME_MAPPING, DEFAULT_CONFIG
 
 class TradingBotV4:
-    """Trading Bot Version 4 - Full Integration"""
+    """Trading Bot Version 4 - Complete Integration"""
     
     def __init__(self, config: Dict[str, Any] = None):
         # Default settings
         self.config = config or DEFAULT_CONFIG.copy()
         
         # Setup logger
-        self.logger = setup_logger("trading_bot_v4", logging.INFO, log_to_file=True, log_to_console=True)
-        self.trade_logger = get_trade_logger()
-        self.performance_logger = get_performance_logger()
+        output_dir = self.config.get('output_dir', os.path.join("logs", "backtests"))
+        self.output_dir = output_dir
+        self.logger = setup_logger("trading_bot_v4", logging.INFO, log_to_file=True, log_to_console=True, log_dir=output_dir)
+        self.trade_logger = get_trade_logger(log_dir=output_dir)
+        self.performance_logger = get_performance_logger(log_dir=output_dir)
         
         # Create instances
         self.data_fetcher = DataFetcher()
@@ -48,15 +51,42 @@ class TradingBotV4:
         self.logger.info("🤖 Trading Bot Version 4 initialized")
         self.logger.info(f"💰 Initial capital: ${self.portfolio_value:,.2f}")
 
+    def _filter_strategy_params(self, strategy_params: Dict[str, Any]) -> Dict[str, Any]:
+        """Filter out parameters that don't exist in strategy class"""
+        try:
+            # Get valid parameters from strategy class
+            sig = inspect.signature(EnhancedRsiStrategyV4.__init__)
+            valid_params = set(sig.parameters.keys())
+            
+            # Remove 'self' from valid params
+            valid_params.discard('self')
+            
+            # Filter parameters
+            filtered_params = {k: v for k, v in strategy_params.items() if k in valid_params}
+            
+            # Log removed parameters
+            removed_params = set(strategy_params.keys()) - set(filtered_params.keys())
+            if removed_params:
+                self.logger.warning(f"⚠️ Removed incompatible parameters: {removed_params}")
+            
+            return filtered_params
+            
+        except Exception as e:
+            self.logger.error(f"Error filtering strategy parameters: {e}")
+            return strategy_params
+
     def initialize_strategy(self, strategy_params: Dict[str, Any] = None):
         """Initialize strategy"""
         try:
             if strategy_params is None:
                 strategy_params = OPTIMIZED_PARAMS_V4
             
-            self.strategy = EnhancedRsiStrategyV4(**strategy_params)
+            # Filter out incompatible parameters
+            filtered_params = self._filter_strategy_params(strategy_params)
+            
+            self.strategy = EnhancedRsiStrategyV4(**filtered_params)
             self.logger.info("✅ RSI Strategy Version 4 initialized")
-            self.logger.info(f"📊 Parameters: RSI({strategy_params['rsi_period']}), Risk: {strategy_params['risk_per_trade']*100}%")
+            self.logger.info(f"📊 Parameters: RSI({filtered_params['rsi_period']}), Risk: {filtered_params['risk_per_trade']*100}%")
             
             return True
             
@@ -73,7 +103,8 @@ class TradingBotV4:
                 'slippage': self.config.get('slippage', 0.0001),
                 'enable_plotting': True,
                 'detailed_logging': True,
-                'save_trade_logs': True
+                'save_trade_logs': True,
+                'output_dir': self.config.get('output_dir', os.path.join("logs", "backtests"))
             }
             
             if backtest_params:
@@ -90,7 +121,7 @@ class TradingBotV4:
 
     def test_connections(self) -> bool:
         """Test connections to data sources"""
-        self.logger.info("🔌 Testing connections to data sources...")
+        self.logger.info("🔌 Testing data source connections...")
         
         try:
             # Test MT5
@@ -112,7 +143,7 @@ class TradingBotV4:
             return mt5_ok or crypto_ok
             
         except Exception as e:
-            self.logger.error(f"❌ Error testing connections: {e}")
+            self.logger.error(f"❌ Connection test error: {e}")
             return False
 
     def get_market_data(
@@ -122,9 +153,9 @@ class TradingBotV4:
         limit: int = 100,
         data_source: str = "AUTO"
     ) -> pd.DataFrame:
-        """Fetch market data"""
+        """Get market data"""
         try:
-            self.logger.info(f"📥 Fetching data for {symbol} (Timeframe: {timeframe})")
+            self.logger.info(f"📥 Getting data for {symbol} (Timeframe: {timeframe})")
             
             data = self.data_fetcher.fetch_market_data(
                 symbol=symbol,
@@ -142,7 +173,7 @@ class TradingBotV4:
             return data
             
         except Exception as e:
-            self.logger.error(f"❌ Error fetching data: {e}")
+            self.logger.error(f"❌ Error getting data: {e}")
             raise
 
     def run_backtest(
@@ -152,9 +183,9 @@ class TradingBotV4:
         days_back: int = 90,
         strategy_params: Dict[str, Any] = None
     ) -> Dict[str, Any]:
-        """Run full backtest"""
+        """Run complete backtest"""
         try:
-            self.logger.info("🎯 Starting full backtest")
+            self.logger.info("🎯 Starting complete backtest")
             
             # Initialize strategy
             if not self.initialize_strategy(strategy_params):
@@ -169,7 +200,7 @@ class TradingBotV4:
                 symbol=symbol,
                 timeframe=timeframe,
                 days_back=days_back,
-                strategy_params=strategy_params or OPTIMIZED_PARAMS_V4
+                strategy_params=strategy_params
             )
             
             # Display results
@@ -208,7 +239,7 @@ class TradingBotV4:
                 iteration += 1
                 
                 try:
-                    # Fetch new data
+                    # Get new data
                     data = self.get_market_data(symbol, timeframe, limit=100)
                     
                     # Generate signal
@@ -231,7 +262,7 @@ class TradingBotV4:
             self.logger.info("✅ Live simulation completed")
             
         except Exception as e:
-            self.logger.error(f"❌ Error in live simulation: {e}")
+            self.logger.error(f"❌ Live simulation error: {e}")
             raise
 
     def _process_signal(self, signal: Dict[str, Any], data: pd.DataFrame):
@@ -241,17 +272,17 @@ class TradingBotV4:
             current_price = data['close'].iloc[-1]
             
             if action == 'BUY':
-                self.trade_logger.info(f"🎯 Buy signal at {current_price:.4f}")
+                self.trade_logger.info(f"🎯 BUY signal at {current_price:.4f}")
                 self.current_position = "LONG"
                 
             elif action == 'SELL':
-                self.trade_logger.info(f"🎯 Sell signal at {current_price:.4f}")
+                self.trade_logger.info(f"🎯 SELL signal at {current_price:.4f}")
                 self.current_position = "SHORT"
                 
             elif action == 'EXIT':
                 pnl = signal.get('pnl_percentage', 0)
                 reason = signal.get('exit_reason', '')
-                self.trade_logger.info(f"🔚 Exit trade - PnL: {pnl:.2f}% - Reason: {reason}")
+                self.trade_logger.info(f"🔚 Trade exit - PnL: {pnl:.2f}% - Reason: {reason}")
                 self.current_position = "OUT"
                 
             elif action == 'PARTIAL_EXIT':
@@ -295,32 +326,54 @@ class TradingBotV4:
             
             wait_seconds = wait_times.get(timeframe, 3600)
             
-            # In simulation, we only wait for one second
+            # In simulation, we only wait one second
             import time
             time.sleep(1)
             
         except Exception as e:
-            self.logger.error(f"Error waiting for next candle: {e}")
+            self.logger.error(f"Error waiting for candle: {e}")
+
+    def _convert_to_serializable(self, obj):
+        """Convert non-serializable objects to serializable formats"""
+        if isinstance(obj, (pd.Timestamp, datetime)):
+            return obj.isoformat()
+        elif isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, dict):
+            return {key: self._convert_to_serializable(value) for key, value in obj.items()}
+        elif isinstance(obj, list):
+            return [self._convert_to_serializable(item) for item in obj]
+        elif hasattr(obj, 'dtype'):  # Handle other numpy types
+            return float(obj)
+        else:
+            return obj
 
     def _save_backtest_results(self, results: Dict[str, Any], symbol: str, timeframe: str):
-        """Save backtest results"""
+        """Save backtest results with proper serialization"""
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"backtest_results_{symbol}_{timeframe}_{timestamp}.json"
+            output_root = getattr(self.backtest_engine, 'output_dir', os.path.join("logs", "backtests"))
+            results_dir = os.path.join(output_root, "results")
+            os.makedirs(results_dir, exist_ok=True)
+            filename = os.path.join(results_dir, f"backtest_results_{symbol}_{timeframe}_{timestamp}.json")
             
-            # Convert to saveable format
+            # Convert to savable format with proper serialization
             save_data = {
                 'symbol': symbol,
                 'timeframe': timeframe,
                 'timestamp': timestamp,
-                'performance_metrics': results.get('performance_metrics', {}),
-                'data_info': results.get('data_info', {}),
-                'strategy_metrics': results.get('strategy_metrics', {})
+                'performance_metrics': self._convert_to_serializable(results.get('performance_metrics', {})),
+                'data_info': self._convert_to_serializable(results.get('data_info', {})),
+                'strategy_metrics': self._convert_to_serializable(results.get('strategy_metrics', {}))
             }
             
             import json
             with open(filename, 'w', encoding='utf-8') as f:
-                json.dump(save_data, f, indent=2, ensure_ascii=False)
+                json.dump(save_data, f, indent=2, ensure_ascii=False, default=str)
             
             self.logger.info(f"💾 Results saved to {filename}")
             
@@ -328,14 +381,14 @@ class TradingBotV4:
             self.logger.error(f"Error saving results: {e}")
 
     def get_available_symbols(self, data_source: str = "MT5") -> list:
-        """Get list of available symbols"""
+        """Get available symbols list"""
         try:
             symbols = self.data_fetcher.get_available_symbols(data_source)
             self.logger.info(f"📋 Number of {data_source} symbols: {len(symbols)}")
             return symbols
             
         except Exception as e:
-            self.logger.error(f"Error fetching symbol list: {e}")
+            self.logger.error(f"Error getting symbols list: {e}")
             return []
 
     def get_strategy_performance(self) -> Dict[str, Any]:
@@ -345,7 +398,7 @@ class TradingBotV4:
         return {}
 
     def stop(self):
-        """Stop the bot"""
+        """Stop bot"""
         self.is_running = False
         self.logger.info("🛑 Bot stopped")
 
@@ -365,11 +418,11 @@ def main():
         while True:
             print("\n" + "=" * 60)
             print("Main Menu:")
-            print("1. Quick backtest (EURUSD - H1)")
-            print("2. Custom backtest")
-            print("3. Live simulation")
-            print("4. Show available symbols")
-            print("5. Test data fetching")
+            print("1. Quick Backtest (EURUSD - H1)")
+            print("2. Custom Backtest")
+            print("3. Live Simulation")
+            print("4. Show Available Symbols")
+            print("5. Test Data Fetching")
             print("6. Exit")
             
             choice = input("\nPlease select an option: ").strip()
@@ -384,7 +437,7 @@ def main():
                 print("\n🎯 Running custom backtest...")
                 symbol = input("Symbol (default: EURUSD): ").strip() or "EURUSD"
                 timeframe = input("Timeframe (default: H1): ").strip() or "H1"
-                days = input("Number of days (default: 90): ").strip()
+                days = input("Days back (default: 90): ").strip()
                 days_back = int(days) if days.isdigit() else 90
                 
                 bot.run_backtest(symbol=symbol, timeframe=timeframe, days_back=days_back)
