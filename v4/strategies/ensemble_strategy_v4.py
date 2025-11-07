@@ -83,7 +83,12 @@ class EnsembleRsiStrategyV4:
 
         # Optional guards
         bb_width_min: Optional[float] = 0.001,  # avoid dead markets
-        bb_width_max: Optional[float] = 0.06,   # avoid extreme spikes
+        bb_width_max: Optional[float] = 0.06,   # avoid extreme spikes,
+
+        # Volatility adaptation (new)
+        vol_sl_min_multiplier: float = 1.5,     # enforce at least 1.5x ATR for SL
+        vol_sl_high_multiplier: float = 2.2,    # widen SL in volatile regimes
+        bb_width_vol_threshold: Optional[float] = 0.015,  # BB width threshold to detect volatility
     ):
         # Parameters
         self.rsi_period = rsi_period
@@ -128,6 +133,9 @@ class EnsembleRsiStrategyV4:
 
         self.bb_width_min = bb_width_min
         self.bb_width_max = bb_width_max
+        self.vol_sl_min_multiplier = vol_sl_min_multiplier
+        self.vol_sl_high_multiplier = vol_sl_high_multiplier
+        self.bb_width_vol_threshold = bb_width_vol_threshold
 
         # State
         self._position = PositionType.OUT
@@ -549,20 +557,32 @@ class EnsembleRsiStrategyV4:
             return 0.0
 
     def calculate_stop_take_profit(self, data: pd.DataFrame, position_type: PositionType, entry_price: float) -> Tuple[float, float]:
+        # Base ATR
         atr = self.calculate_atr(data)
-        sl_mult = self.stop_loss_atr_multiplier
-        tp_mult = self.stop_loss_atr_multiplier * self.take_profit_ratio
+
+        # Detect volatility regime using BB width and ADX if available
+        bb_w = float(data['BB_Width'].iloc[-1]) if 'BB_Width' in data.columns and not pd.isna(data['BB_Width'].iloc[-1]) else 0.0
+        adx = float(data['ADX'].iloc[-1]) if 'ADX' in data.columns and not pd.isna(data['ADX'].iloc[-1]) else 0.0
+
+        # Enforce minimum SL multiplier and widen in volatile regimes
+        sl_mult = max(self.stop_loss_atr_multiplier, getattr(self, 'vol_sl_min_multiplier', 1.5))
+        if (self.bb_width_vol_threshold is not None and bb_w >= self.bb_width_vol_threshold) or adx >= 22.0:
+            sl_mult = max(sl_mult, getattr(self, 'vol_sl_high_multiplier', 2.2))
+
+        # Floor ATR to avoid ultra-tight stops on very low TFs
+        atr_floor = max(atr, entry_price * 0.002)  # 0.2% of price
+        tp_mult = sl_mult * self.take_profit_ratio
 
         if position_type == PositionType.LONG:
-            sl = entry_price - (atr * sl_mult)
-            tp = entry_price + (atr * tp_mult)
+            sl = entry_price - (atr_floor * sl_mult)
+            tp = entry_price + (atr_floor * tp_mult)
             if sl >= entry_price:
                 sl = entry_price * 0.99
             if tp <= entry_price:
                 tp = entry_price * 1.02
         else:
-            sl = entry_price + (atr * sl_mult)
-            tp = entry_price - (atr * tp_mult)
+            sl = entry_price + (atr_floor * sl_mult)
+            tp = entry_price - (atr_floor * tp_mult)
             if sl <= entry_price:
                 sl = entry_price * 1.01
             if tp >= entry_price:

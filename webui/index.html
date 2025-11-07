@@ -1,0 +1,522 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>مشاهده‌گر لاگ‌ها - V4</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <meta name="color-scheme" content="dark light">
+  <style>
+    :root { color-scheme: dark; }
+    body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Vazirmatn", "IRANSans", "Tahoma", sans-serif; }
+    .scrollbar-thin::-webkit-scrollbar { height: 6px; width: 6px; }
+    .scrollbar-thin::-webkit-scrollbar-thumb { background-color: #475569; border-radius: 8px; }
+    .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+    .dir-drop { border: 2px dashed rgba(148,163,184,0.5); }
+    .log-line.error { background: rgba(239,68,68,.08); }
+    .log-line.warn { background: rgba(245,158,11,.08); }
+    .log-line.info { background: rgba(59,130,246,.06); }
+    .badge { border:1px solid rgba(148,163,184,.25); }
+  </style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen">
+  <header class="border-b border-slate-800 bg-slate-900/60 backdrop-blur sticky top-0 z-10">
+    <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-lg bg-indigo-600 flex items-center justify-center shadow-lg shadow-indigo-900/30">
+          <span class="font-black">V4</span>
+        </div>
+        <div>
+          <h1 class="text-lg font-bold">پنل وب مشاهده لاگ‌ها</h1>
+          <p class="text-xs text-slate-400">HTML + Tailwind + JS (File System Access API)</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <button id="btn-open-dir" class="px-3 py-2 rounded-md bg-indigo-600 hover:bg-indigo-500 text-white text-sm">باز کردن پوشه لاگ</button>
+        <label class="px-3 py-2 rounded-md bg-slate-800 hover:bg-slate-700 text-sm cursor-pointer">
+          انتخاب فایل
+          <input id="file-input" type="file" class="hidden" multiple accept=".jsonl,.log,.txt">
+        </label>
+        <a href="#" id="btn-help" class="text-slate-400 hover:text-slate-200 text-sm">راهنما</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-4 py-4 grid grid-cols-12 gap-4">
+    <aside class="col-span-12 lg:col-span-3">
+      <div class="bg-slate-800/50 border border-slate-700 rounded-xl p-3">
+        <div class="flex items-center gap-2 mb-3">
+          <input id="search-files" type="text" placeholder="جستجوی فایل..." class="w-full rounded-md bg-slate-900 border border-slate-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-600">
+          <button id="btn-refresh" class="px-2 py-2 rounded-md bg-slate-700 hover:bg-slate-600 text-xs">رفرش</button>
+        </div>
+        <div id="dropzone" class="dir-drop rounded-lg p-4 text-slate-400 text-sm text-center">
+          فایل‌ها را اینجا بکشید و رها کنید یا از دکمه‌ها استفاده کنید
+        </div>
+        <div class="mt-4">
+          <div class="flex items-center justify-between mb-2">
+            <h2 class="text-sm font-semibold text-slate-300">فایل‌های پیدا شده</h2>
+            <span id="file-count" class="text-xs text-slate-500">۰</span>
+          </div>
+          <ul id="file-list" class="space-y-1 max-h-[60vh] overflow-auto pr-1 scrollbar-thin"></ul>
+        </div>
+      </div>
+    </aside>
+
+    <section class="col-span-12 lg:col-span-9">
+      <div class="bg-slate-800/50 border border-slate-700 rounded-xl">
+        <div class="p-3 border-b border-slate-700 flex flex-wrap items-center gap-2">
+          <div class="flex items-center gap-2">
+            <input id="search-text" type="text" placeholder="جستجو داخل لاگ..." class="rounded-md bg-slate-900 border border-slate-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-600 w-64">
+            <label class="text-xs text-slate-400 flex items-center gap-1">
+              <input id="toggle-autoscroll" type="checkbox" class="rounded text-indigo-600" checked>
+              اسکرول خودکار
+            </label>
+          </div>
+          <div class="ml-auto flex items-center gap-2">
+            <span id="current-file" class="text-xs px-2 py-1 rounded badge text-slate-300">هیچ فایلی انتخاب نشده</span>
+            <span id="lines-count" class="text-xs px-2 py-1 rounded badge text-slate-400">۰ خط</span>
+          </div>
+        </div>
+        <div id="content" class="p-3">
+          <div id="welcome" class="text-slate-400 text-sm leading-7">
+            <p>برای شروع، از دکمه «باز کردن پوشه لاگ» استفاده کنید و پوشه <code>logs</code> یا <code>v4/logs</code> پروژه را انتخاب کنید، یا فایل‌های لاگ را اینجا رها کنید.</p>
+            <ul class="list-disc pr-5 mt-2">
+              <li>پشتیبانی از فرمت JSONL (خروجی زنده) و فایل‌های .log/.txt</li>
+              <li>فیلتر و جستجوی سریع داخل لاگ‌ها</li>
+              <li>هایلایت خودکار سطح خطاها و سیگنال‌های معاملاتی</li>
+            </ul>
+          </div>
+          <div id="table-view" class="hidden">
+            <div class="overflow-auto max-h-[70vh] scrollbar-thin">
+              <table class="min-w-full text-sm">
+                <thead class="sticky top-0 bg-slate-900/80 backdrop-blur">
+                  <tr id="table-head"></tr>
+                </thead>
+                <tbody id="table-body" class="divide-y divide-slate-700"></tbody>
+              </table>
+            </div>
+          </div>
+          <div id="log-view" class="hidden">
+            <pre id="log-pre" class="bg-slate-900 rounded-lg p-3 max-h-[70vh] overflow-auto whitespace-pre-wrap scrollbar-thin text-slate-200 text-xs"></pre>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="max-w-7xl mx-auto px-4 py-6 text-center text-xs text-slate-500">
+    ساخته‌شده با Tailwind و جاوااسکریپت — مناسب برای مشاهده لاگ‌های پروژه V4
+  </footer>
+
+  <script>
+  // --- State ---
+  const state = {
+    files: [],
+    activeFile: null,
+    autoscroll: true,
+    // Live streaming state
+    liveEnabled: false,
+    liveRecords: [],
+    liveLines: [],
+    eventSource: null,
+  };
+
+  // --- Helpers ---
+  const el = id => document.getElementById(id);
+  const $list = el('file-list');
+  const $fileCount = el('file-count');
+  const $currentFile = el('current-file');
+  const $linesCount = el('lines-count');
+  const $welcome = el('welcome');
+  const $tableView = el('table-view');
+  const $logView = el('log-view');
+  const $tableHead = el('table-head');
+  const $tableBody = el('table-body');
+  const $logPre = el('log-pre');
+
+  function humanSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+   const units = ['KB','MB','GB'];
+   let u = -1;
+   do { bytes = bytes / 1024; u++; } while (bytes >= 1024 && u < units.length - 1);
+   return bytes.toFixed(1) + ' ' + units[u];
+  }
+
+  function extOf(name) {
+    return (name.split('.').pop() || '').toLowerCase();
+  }
+
+  function isJsonl(name) {
+    return extOf(name) === 'jsonl' || name.toLowerCase().endsWith('.jsonl');
+  }
+
+  function badge(text, cls='') {
+    return `<span class="badge text-xs px-2 py-0.5 rounded ${cls}">${text}</span>`;
+  }
+
+  function highlightLogLine(line) {
+    const l = line;
+    let cls = 'info';
+    if (/error|❌/i.test(l)) cls = 'error';
+    else if (/warn|⚠️/i.test(l)) cls = 'warn';
+    else if (/(BUY|SELL|EXIT|PARTIAL)/.test(l)) cls = 'info';
+    return `<div class="log-line ${cls} py-0.5">${escapeHtml(l)}</div>`;
+  }
+
+  function escapeHtml(str) {
+    const map = {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;'
+    };
+    return String(str).replace(/[&<>"']/g, (m) => map[m]);
+  }
+
+  function formatTs(ts) {
+    try {
+      const d = new Date(ts);
+      if (!isNaN(d)) return d.toLocaleString('fa-IR');
+      return ts;
+    } catch { return ts; }
+  }
+
+  // --- Directory Picker (File System Access API) ---
+  async function pickDirectory() {
+    if (!('showDirectoryPicker' in window)) {
+      alert('مرورگر از انتخاب پوشه پشتیبانی نمی‌کند. از گزینه انتخاب فایل استفاده کنید.');
+      return;
+    }
+    try {
+      const dirHandle = await window.showDirectoryPicker();
+      const files = [];
+      await walkDirectory(dirHandle, files);
+      if (!files.length) {
+        alert('هیچ فایل لاگی در این مسیر یافت نشد.');
+        return;
+      }
+      state.files = files.sort((a,b)=>a.name.localeCompare(b.name,'fa'));
+      renderFileList();
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  async function walkDirectory(dirHandle, acc, pathPrefix='') {
+    for await (const [name, handle] of dirHandle.entries()) {
+      const full = pathPrefix ? pathPrefix + '/' + name : name;
+      if (handle.kind === 'directory') {
+        await walkDirectory(handle, acc, full);
+      } else {
+        if (/\.(jsonl|log|txt)$/i.test(name)) {
+          const file = await handle.getFile();
+          acc.push({ name: full, size: file.size, handle, file });
+        }
+      }
+    }
+  }
+
+  // --- List rendering ---
+  function renderFileList(filter='') {
+    const q = (filter || el('search-files').value || '').trim().toLowerCase();
+    const items = state.files.filter(f => !q || f.name.toLowerCase().includes(q));
+    $fileCount.textContent = items.length.toLocaleString('fa-IR');
+    $list.innerHTML = items.map((f,idx) => {
+      const isLive = /live/i.test(f.name);
+      const isBack = /backtest/i.test(f.name);
+      return `
+      <li>
+        <button data-idx="${idx}" class="w-full text-right px-3 py-2 rounded-md hover:bg-slate-700/60 border border-slate-700/40 flex items-center justify-between gap-2">
+          <span class="truncate">${f.name}</span>
+          <span class="flex items-center gap-1 shrink-0">
+            ${badge(humanSize(f.size),'text-slate-400')}
+            ${isLive ? badge('LIVE','text-emerald-300') : ''}
+            ${isBack ? badge('BACKTEST','text-cyan-300') : ''}
+          </span>
+        </button>
+      </li>`;
+    }).join('');
+  }
+
+  // --- Read and display file ---
+  async function openFileByIndex(idx) {
+    const item = state.files[idx];
+    if (!item) return;
+    try {
+      let text = '';
+      if (item.file) {
+        text = await item.file.text();
+      } else if (item.handle) {
+        const f = await item.handle.getFile();
+        text = await f.text();
+        item.file = f;
+        item.size = f.size;
+      }
+      state.activeFile = item;
+      $currentFile.textContent = item.name;
+      const lines = text.split(/\r?\n/).filter(Boolean);
+      $linesCount.textContent = lines.length.toLocaleString('fa-IR') + ' خط';
+
+      if (isJsonl(item.name)) {
+        showJsonl(lines);
+      } else {
+        showPlainLog(lines);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  function detectColumns(records) {
+    const preferred = ['timestamp','type','symbol','side','price','position_size','pnl_percentage','pnl_amount','exit_reason','reason','outcome'];
+    const set = new Set();
+    for (const r of records) Object.keys(r).forEach(k=>set.add(k));
+    const cols = [];
+    for (const p of preferred) if (set.has(p)) cols.push(p);
+    for (const k of set) if (!cols.includes(k)) cols.push(k);
+    return cols;
+  }
+
+  function showJsonl(lines) {
+    const records = [];
+    for (const ln of lines) {
+      try {
+        const obj = JSON.parse(ln);
+        records.push(obj);
+      } catch {}
+    }
+    if (!records.length) {
+      showPlainLog(lines);
+      return;
+    }
+    $welcome.classList.add('hidden');
+    $logView.classList.add('hidden');
+    $tableView.classList.remove('hidden');
+
+    const cols = detectColumns(records);
+    $tableHead.innerHTML = cols.map(c => `<th class="text-right px-3 py-2 font-semibold text-slate-300 whitespace-nowrap">${c}</th>`).join('');
+    const rows = records.map(rec => {
+      return '<tr class="hover:bg-slate-900/50">' + cols.map(c => {
+        let v = rec[c];
+        if (c === 'timestamp') v = formatTs(v);
+        if (typeof v === 'number') v = Number.isInteger(v) ? v : v.toFixed(4);
+        if (v === null || v === undefined) v = '';
+        return `<td class="px-3 py-1.5 align-top text-slate-200">${escapeHtml(String(v))}</td>`;
+      }).join('') + '</tr>';
+    }).join('');
+    $tableBody.innerHTML = rows;
+  }
+
+  function showPlainLog(lines) {
+    $welcome.classList.add('hidden');
+    $tableView.classList.add('hidden');
+    $logView.classList.remove('hidden');
+
+    const q = (el('search-text').value || '').trim();
+    const filtered = q ? lines.filter(l => l.toLowerCase().includes(q.toLowerCase())) : lines;
+    $logPre.innerHTML = filtered.map(highlightLogLine).join('');
+    if (state.autoscroll) {
+      $logPre.scrollTop = $logPre.scrollHeight;
+    }
+  }
+
+  // --- Events ---
+  el('btn-open-dir').addEventListener('click', pickDirectory);
+  el('btn-refresh').addEventListener('click', () => renderFileList());
+  el('search-files').addEventListener('input', () => renderFileList());
+  el('search-text').addEventListener('input', () => {
+    // Live mode: re-render according to current filter
+    if (state.liveEnabled) {
+      if ($tableView.classList.contains('hidden')) {
+        renderLivePlain();
+      } else {
+        renderLiveTable();
+      }
+      return;
+    }
+    // File mode: re-open active file to apply filter
+    if (state.activeFile) {
+      openFileByIndex(state.files.indexOf(state.activeFile));
+    }
+  });
+  el('toggle-autoscroll').addEventListener('change', (e) => state.autoscroll = !!e.target.checked);
+
+  $list.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-idx]');
+    if (!btn) return;
+    openFileByIndex(Number(btn.dataset.idx));
+  });
+
+  // Drag&Drop
+  const $dz = el('dropzone');
+  ['dragenter','dragover'].forEach(evt => $dz.addEventListener(evt, (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    $dz.classList.add('bg-slate-800/60');
+  }));
+  ['dragleave','drop'].forEach(evt => $dz.addEventListener(evt, (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    $dz.classList.remove('bg-slate-800/60');
+  }));
+  $dz.addEventListener('drop', async (e) => {
+    const files = [...(e.dataTransfer?.files || [])];
+    await addPickedFiles(files);
+  });
+
+  // File input
+  el('file-input').addEventListener('change', async (e) => {
+    const files = [...(e.target.files || [])];
+   await addPickedFiles(files);
+    e.target.value = '';
+  });
+
+  async function addPickedFiles(fileList) {
+    const newOnes = fileList.filter(f => /\.(jsonl|log|txt)$/i.test(f.name)).map(f => ({
+      name: f.name,
+      size: f.size,
+      file: f,
+      handle: null
+    }));
+    state.files = dedupeFiles([...state.files, ...newOnes]);
+    renderFileList();
+  }
+
+  function dedupeFiles(arr) {
+    const seen = new Set();
+    const out = [];
+    for (const it of arr) {
+      const key = it.name + '|' + it.size;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(it);
+    }
+    return out;
+  }
+
+  // Help
+  el('btn-help').addEventListener('click', (e) => {
+    e.preventDefault();
+    alert('برای مشاهده لاگ‌ها یکی از روش‌های زیر را استفاده کنید:\n\n1) دکمه «باز کردن پوشه لاگ» و انتخاب پوشه logs یا v4/logs\n2) دکمه «انتخاب فایل» یا کشیدن و رها کردن فایل‌ها به داخل کادر.');
+  });
+
+  // --- Live SSE Streaming (Server-Sent Events) ---
+  async function connectLive() {
+    // Skip on file:// protocol
+    if (location.protocol === 'file:') return;
+    try {
+      const resp = await fetch('/api/last-live', { cache: 'no-store' });
+      if (!resp.ok) {
+        console.warn('No live file from server, fallback to manual mode');
+        return;
+      }
+      const info = await resp.json();
+      const path = info.path;
+      const kind = (info.kind || '').toLowerCase();
+      const isJson = kind === 'jsonl';
+
+      // Open SSE stream
+      const url = '/api/tail?path=' + encodeURIComponent(path) + '&from_start=false';
+      const es = new EventSource(url);
+      state.eventSource = es;
+      state.liveEnabled = true;
+
+      // Prepare UI
+      $welcome.classList.add('hidden');
+      $currentFile.textContent = (info.name || 'LIVE') + ' — زنده';
+      $linesCount.textContent = '۰ خط';
+
+      es.addEventListener('meta', (e) => {
+        try {
+          const meta = JSON.parse(e.data);
+          $currentFile.textContent = (meta.path || 'LIVE') + ' — زنده';
+        } catch {}
+      });
+
+      es.addEventListener('error', (e) => {
+        console.error('SSE error', e);
+      });
+
+      es.onmessage = (e) => {
+        try {
+          const obj = JSON.parse(e.data);
+          if (obj && typeof obj === 'object' && Object.prototype.hasOwnProperty.call(obj, 'message') && !isJson) {
+            // Plain text line wrapped
+            state.liveLines.push(String(obj.message || ''));
+            renderLivePlain();
+            return;
+          }
+          // JSONL record
+          state.liveRecords.push(obj);
+          renderLiveTable();
+        } catch {
+          // Fallback to plain text
+          state.liveLines.push(String(e.data || ''));
+          renderLivePlain();
+        }
+      };
+    } catch (e) {
+      console.error('connectLive failed', e);
+    }
+  }
+
+  function renderLiveTable() {
+    try {
+      if (!state.liveRecords.length) {
+        // no records yet - keep table visible but empty
+        $welcome.classList.add('hidden');
+        $logView.classList.add('hidden');
+        $tableView.classList.remove('hidden');
+        $tableHead.innerHTML = '';
+        $tableBody.innerHTML = '';
+        $linesCount.textContent = '۰ خط';
+        return;
+    }
+      $welcome.classList.add('hidden');
+      $logView.classList.add('hidden');
+      $tableView.classList.remove('hidden');
+
+      const cols = detectColumns(state.liveRecords);
+      $tableHead.innerHTML = cols.map(c => `<th class="text-right px-3 py-2 font-semibold text-slate-300 whitespace-nowrap">${c}</th>`).join('');
+      const rows = state.liveRecords.map(rec => {
+        return '<tr class="hover:bg-slate-900/50">' + cols.map(c => {
+          let v = rec[c];
+          if (c === 'timestamp') v = formatTs(v);
+          if (typeof v === 'number') v = Number.isInteger(v) ? v : Number(v).toFixed(4);
+          if (v === null || v === undefined) v = '';
+          return `<td class="px-3 py-1.5 align-top text-slate-200">${escapeHtml(String(v))}</td>`;
+        }).join('') + '</tr>';
+      }).join('');
+      $tableBody.innerHTML = rows;
+      $linesCount.textContent = state.liveRecords.length.toLocaleString('fa-IR') + ' خط';
+    } catch (e) {
+      console.error('renderLiveTable error', e);
+    }
+  }
+
+  function renderLivePlain() {
+    try {
+      $welcome.classList.add('hidden');
+      $tableView.classList.add('hidden');
+      $logView.classList.remove('hidden');
+
+      const q = (el('search-text').value || '').trim().toLowerCase();
+      const src = q ? state.liveLines.filter(l => l.toLowerCase().includes(q)) : state.liveLines;
+      $logPre.innerHTML = src.map(highlightLogLine).join('');
+      $linesCount.textContent = state.liveLines.length.toLocaleString('fa-IR') + ' خط';
+      if (state.autoscroll) {
+        $logPre.scrollTop = $logPre.scrollHeight;
+      }
+    } catch (e) {
+      console.error('renderLivePlain error', e);
+    }
+  }
+
+  // Bootstrap: attempt live connection automatically when served via HTTP
+  (function bootstrapLive(){
+    connectLive();
+  })();
+  </script>
+</body>
+</html>

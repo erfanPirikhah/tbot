@@ -117,7 +117,12 @@ class EnhancedRsiStrategyV4:
         mtf_long_rsi_min: float = 50.0,               # min RSI on HTFs for LONG
         mtf_short_rsi_max: float = 50.0,              # max RSI on HTFs for SHORT
         mtf_trend_ema_fast: int = 21,                 # fast EMA used for HTF trend
-        mtf_trend_ema_slow: int = 50                  # slow EMA used for HTF trend
+        mtf_trend_ema_slow: int = 50,                # slow EMA used for HTF trend
+
+        # Volatility adaptation for SL
+        vol_sl_min_multiplier: float = 1.5,
+        vol_sl_high_multiplier: float = 2.2,
+        bb_width_vol_threshold: Optional[float] = 0.015
     ):
         # Initialize all parameters
         self.rsi_period = rsi_period
@@ -164,6 +169,11 @@ class EnhancedRsiStrategyV4:
         self.mtf_short_rsi_max = mtf_short_rsi_max
         self.mtf_trend_ema_fast = mtf_trend_ema_fast
         self.mtf_trend_ema_slow = mtf_trend_ema_slow
+
+        # Volatility adaptation params
+        self.vol_sl_min_multiplier = vol_sl_min_multiplier
+        self.vol_sl_high_multiplier = vol_sl_high_multiplier
+        self.bb_width_vol_threshold = bb_width_vol_threshold
         
         # State variables
         self._position = PositionType.OUT
@@ -607,21 +617,31 @@ class EnhancedRsiStrategyV4:
             return {"action": "HOLD", "reason": f"Exit error: {e}"}
 
     def calculate_stop_take_profit(self, data: pd.DataFrame, position_type: PositionType, entry_price: float) -> Tuple[float, float]:
-        """محاسبه Stop Loss و Take Profit"""
+        """محاسبه Stop Loss و Take Profit با سازگاری نسبت به نوسان برای جلوگیری از SL بسیار تنگ"""
         try:
             atr = self.calculate_atr(data)
-            
-            sl_multiplier = self.stop_loss_atr_multiplier
-            tp_multiplier = self.stop_loss_atr_multiplier * self.take_profit_ratio
-            
+
+            # Volatility detection via BB width and ADX (if available)
+            bb_w = float(data['BB_Width'].iloc[-1]) if 'BB_Width' in data.columns and not pd.isna(data['BB_Width'].iloc[-1]) else 0.0
+            adx = float(data['ADX'].iloc[-1]) if 'ADX' in data.columns and not pd.isna(data['ADX'].iloc[-1]) else 0.0
+
+            # Enforce minimum SL multiplier and widen in volatile regimes
+            sl_multiplier = max(self.stop_loss_atr_multiplier, getattr(self, 'vol_sl_min_multiplier', 1.5))
+            if (self.bb_width_vol_threshold is not None and bb_w >= self.bb_width_vol_threshold) or adx >= 22.0:
+                sl_multiplier = max(sl_multiplier, getattr(self, 'vol_sl_high_multiplier', 2.2))
+
+            # Floor ATR to avoid ultra-tight stops on low-vol regimes
+            atr_floor = max(atr, entry_price * 0.002)  # 0.2% of price as min volatility proxy
+            tp_multiplier = sl_multiplier * self.take_profit_ratio
+
             if position_type == PositionType.LONG:
-                stop_loss = entry_price - (atr * sl_multiplier)
-                take_profit = entry_price + (atr * tp_multiplier)
+                stop_loss = entry_price - (atr_floor * sl_multiplier)
+                take_profit = entry_price + (atr_floor * tp_multiplier)
             else:  # SHORT
-                stop_loss = entry_price + (atr * sl_multiplier)
-                take_profit = entry_price - (atr * tp_multiplier)
-            
-            # Validation
+                stop_loss = entry_price + (atr_floor * sl_multiplier)
+                take_profit = entry_price - (atr_floor * tp_multiplier)
+
+            # Validation guards
             if position_type == PositionType.LONG:
                 if stop_loss >= entry_price:
                     stop_loss = entry_price * 0.985
@@ -632,10 +652,10 @@ class EnhancedRsiStrategyV4:
                     stop_loss = entry_price * 1.015
                 if take_profit >= entry_price:
                     take_profit = entry_price * 0.96
-            
-            logger.info(f"SL: {stop_loss:.4f}, TP: {take_profit:.4f}")
+
+            logger.info(f"SL: {stop_loss:.4f}, TP: {take_profit:.4f} (ATR: {atr:.6f}, bb_w: {bb_w:.4f}, adx: {adx:.2f})")
             return stop_loss, take_profit
-            
+
         except Exception as e:
             logger.error(f"Error calculating SL/TP: {e}")
             if position_type == PositionType.LONG:

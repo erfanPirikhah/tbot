@@ -166,6 +166,11 @@ ENSEMBLE_SCALPING_M5 = {
 
     'bb_width_min': 0.001,
     'bb_width_max': 0.06,
+
+    # Volatility adaptation for SL tightening avoidance
+    'vol_sl_min_multiplier': 1.5,       # enforce minimum SL width
+    'vol_sl_high_multiplier': 2.2,      # widen SL under high volatility
+    'bb_width_vol_threshold': 0.015,    # BB width threshold to detect volatile regime
 }
 
 ENSEMBLE_INTRADAY_M15 = {
@@ -200,6 +205,11 @@ ENSEMBLE_INTRADAY_M15 = {
 
     'bb_width_min': 0.001,
     'bb_width_max': 0.06,
+
+    # Volatility adaptation for SL tightening avoidance
+    'vol_sl_min_multiplier': 1.5,
+    'vol_sl_high_multiplier': 2.2,
+    'bb_width_vol_threshold': 0.015,
 }
 
 # ✅ H1 profile tuned for higher win rate and realistic TP/SL

@@ -19,7 +19,7 @@ if v4_dir not in sys.path:
 warnings.filterwarnings('ignore')
 
 # Import project modules
-from utils.logger import setup_logger, get_trade_logger, get_performance_logger
+from utils.logger import setup_logger, get_trade_logger, get_performance_logger, get_mongo_collection
 from data.data_fetcher import DataFetcher
 from strategies.enhanced_rsi_strategy_v4 import EnhancedRsiStrategyV4, PositionType
 from strategies.ensemble_strategy_v4 import EnsembleRsiStrategyV4
@@ -37,14 +37,33 @@ class TradingBotV4:
         # Setup logger
         output_dir = self.config.get('output_dir', os.path.join("logs", "backtests"))
         self.output_dir = output_dir
-        self.logger = setup_logger("trading_bot_v4", logging.INFO, log_to_file=True, log_to_console=True, log_dir=output_dir)
+        self.logger = setup_logger(
+            "trading_bot_v4",
+            logging.INFO,
+            log_to_file=False,
+            log_to_console=True,
+            log_dir=output_dir,
+            log_to_mongo=True,
+            mongo_uri=os.getenv("MONGO_URI", "mongodb://localhost:27017"),
+            mongo_db=os.getenv("TRADING_LOGS_DB", "trading_logs")
+        )
         self.trade_logger = get_trade_logger(log_dir=output_dir)
         self.performance_logger = get_performance_logger(log_dir=output_dir)
 
-        # Live output directory for multi-symbol live scan
-        self.live_output_dir = os.path.join("logs", "live")
-        os.makedirs(self.live_output_dir, exist_ok=True)
+        # Live output logging routed to MongoDB (no files)
+        self.live_output_dir = os.path.join("logs", "live")  # kept for backward compat, not used
         self.live_log_path = None
+        # Session and live collections
+        self.session_id = None
+        self.live_timeframe = None
+        self.live_data_source = None
+        self.live_symbols: List[str] = []
+        self.live_collection = None  # legacy single collection (unused)
+        self.live_col_entries = None
+        self.live_col_exits = None
+        self.live_col_partials = None
+        self.live_col_candidates = None
+        self.live_col_status = None
         
         # Create instances
         self.data_fetcher = DataFetcher()
@@ -279,6 +298,8 @@ class TradingBotV4:
             
             end_time = datetime.now() + timedelta(hours=duration_hours)
             iteration = 0
+            # Initialize live log collections (single-symbol session)
+            self._init_live_trade_log(timeframe, [symbol], data_source="AUTO")
             
             while datetime.now() < end_time and self.is_running:
                 iteration += 1
@@ -292,10 +313,50 @@ class TradingBotV4:
                     
                     # Process signal
                     self._process_signal(signal, data)
+
+                    # Persist live entry/exit to dedicated collections
+                    try:
+                        action = signal.get('action', 'HOLD')
+                        rec = None
+                        if action in ('BUY', 'SELL'):
+                            rec = {
+                                "timestamp": data.index[-1],
+                                "type": "ENTRY",
+                                "symbol": symbol,
+                                "side": "LONG" if action == "BUY" else "SHORT",
+                                "price": float(signal.get('price', data['close'].iloc[-1])),
+                                "position_size": signal.get('position_size'),
+                                "stop_loss": signal.get('stop_loss'),
+                                "take_profit": signal.get('take_profit'),
+                                "reason": signal.get('reason', ''),
+                                "conditions": [],
+                            }
+                        elif action in ('EXIT', 'PARTIAL_EXIT'):
+                            rec = {
+                                "timestamp": data.index[-1],
+                                "type": "EXIT" if action == "EXIT" else "PARTIAL_EXIT",
+                                "symbol": symbol,
+                                "price": float(signal.get('price', data['close'].iloc[-1])),
+                                "pnl_percentage": signal.get('pnl_percentage'),
+                                "pnl_amount": signal.get('pnl_amount'),
+                                "exit_reason": signal.get('exit_reason', signal.get('reason', '')),
+                                "outcome": ("WIN" if (signal.get('pnl_percentage') or 0) >= 0 else "LOSS")
+                            }
+                        if rec:
+                            self._append_live_trade_log(rec)
+                    except Exception:
+                        pass
                     
                     # Display status
                     if iteration % 10 == 0:
                         self._display_status(iteration)
+
+                    # Persist status snapshot (single-symbol)
+                    try:
+                        open_positions = 0 if self.current_position == "OUT" else 1
+                        self._log_live_status(iteration, open_positions, 0)
+                    except Exception:
+                        pass
                     
                     # Wait for next candle
                     self._wait_for_next_candle(timeframe)
@@ -305,6 +366,7 @@ class TradingBotV4:
                     continue
             
             self.logger.info("✅ Live simulation completed")
+            self.logger.info("📄 Live data saved to MongoDB collections: live_entries, live_exits, live_partial_exits, live_status")
             
         except Exception as e:
             self.logger.error(f"❌ Live simulation error: {e}")
@@ -377,35 +439,107 @@ class TradingBotV4:
         except Exception as e:
             self.logger.error(f"Error waiting for candle: {e}")
 
-    def _init_live_trade_log(self, timeframe: str) -> str:
-        """Initialize JSONL log file for live trades."""
+    def _init_live_trade_log(self, timeframe: str, symbols: List[str], data_source: str = "AUTO") -> str:
+        """Initialize separate MongoDB collections for live logging and set session metadata."""
         try:
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = os.path.join(self.live_output_dir, f"live_trades_{timeframe}_{ts}.jsonl")
-            # ensure directory exists
-            os.makedirs(self.live_output_dir, exist_ok=True)
-            # touch file
-            with open(filename, "a", encoding="utf-8") as f:
-                f.write("")
-            self.live_log_path = filename
-            self.logger.info(f"📝 Live trades will be logged to: {filename}")
-            return filename
+            # Session metadata
+            self.session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+            self.live_timeframe = timeframe
+            self.live_data_source = data_source
+            self.live_symbols = list(symbols or [])
+
+            # Collections
+            self.live_col_entries = get_mongo_collection("live_entries")
+            self.live_col_exits = get_mongo_collection("live_exits")
+            self.live_col_partials = get_mongo_collection("live_partial_exits")
+            self.live_col_candidates = get_mongo_collection("live_candidates")
+            self.live_col_status = get_mongo_collection("live_status")
+
+            self.live_log_path = None  # no file fallback by requirement
+
+            self.logger.info(
+                f"📝 Live logging session initialized | session_id={self.session_id} timeframe={timeframe} "
+                f"collections=[live_entries, live_exits, live_partial_exits, live_candidates, live_status]"
+            )
+            return "OK"
         except Exception as e:
-            self.logger.error(f"Error initializing live trade log: {e}")
-            self.live_log_path = None
+            self.logger.error(f"Error initializing live log collections: {e}")
+            # Null out collections on failure
+            self.live_col_entries = None
+            self.live_col_exits = None
+            self.live_col_partials = None
+            self.live_col_candidates = None
+            self.live_col_status = None
             return ""
 
     def _append_live_trade_log(self, record: Dict[str, Any]) -> None:
-        """Append a single JSON record to live trades log."""
+        """Route a single live record to its dedicated MongoDB collection."""
         try:
-            if not self.live_log_path:
+            rec_type = (record or {}).get("type", "").upper()
+            # Ensure collections initialized
+            if any(getattr(self, attr, None) is None for attr in [
+                "live_col_entries", "live_col_exits", "live_col_partials", "live_col_candidates", "live_col_status"
+            ]):
+                # attempt lazy init with last known metadata
+                self._init_live_trade_log(self.live_timeframe or "M1", getattr(self, "live_symbols", []), self.live_data_source or "AUTO")
+
+            col = None
+            if rec_type == "ENTRY":
+                col = self.live_col_entries
+            elif rec_type == "EXIT":
+                col = self.live_col_exits
+            elif rec_type == "PARTIAL_EXIT":
+                col = self.live_col_partials
+            elif rec_type == "CANDIDATES":
+                col = self.live_col_candidates
+            elif rec_type == "STATUS":
+                col = self.live_col_status
+
+            if col is None:
                 return
-            import json
-            with open(self.live_log_path, "a", encoding="utf-8") as f:
-                json.dump(self._convert_to_serializable(record), f, ensure_ascii=False, default=str)
-                f.write("\n")
+
+            doc = self._convert_to_serializable(record)
+            # Enrich with session metadata
+            doc["session_id"] = getattr(self, "session_id", None)
+            doc["timeframe"] = getattr(self, "live_timeframe", None)
+            doc["data_source"] = getattr(self, "live_data_source", None)
+            doc["ts"] = datetime.now().isoformat()
+            col.insert_one(doc)
         except Exception as e:
-            self.logger.error(f"Error writing live trade log: {e}")
+            self.logger.error(f"Error writing live record to MongoDB: {e}")
+
+    def _log_live_candidates(self, candidates: List[Dict[str, Any]], iteration: int) -> None:
+        """Persist live candidates snapshot for this iteration into 'live_candidates' collection."""
+        try:
+            payload = {
+                "type": "CANDIDATES",
+                "iteration": iteration,
+                "session_id": getattr(self, "session_id", None),
+                "timeframe": getattr(self, "live_timeframe", None),
+                "data_source": getattr(self, "live_data_source", None),
+                "total": len(candidates or []),
+                "top": sorted(
+                    [c for c in candidates or []],
+                    key=lambda x: x.get("strength", 0.0),
+                    reverse=True
+                )[:10],
+            }
+            self._append_live_trade_log(payload)
+        except Exception:
+            pass
+
+    def _log_live_status(self, iteration: int, open_positions: int, candidates_count: int) -> None:
+        """Persist status snapshot into 'live_status' collection."""
+        try:
+            payload = {
+                "type": "STATUS",
+                "iteration": iteration,
+                "open_positions": int(open_positions),
+                "candidates_count": int(candidates_count),
+            }
+            self._append_live_trade_log(payload)
+        except Exception:
+            pass
 
     def _fetch_with_fallback(self, symbol: str, timeframe: str, limit: int = 200) -> pd.DataFrame:
         """Fetch market data with timeframe fallback across sources (M1<->1m, M5<->5m)."""
@@ -512,8 +646,8 @@ class TradingBotV4:
                     strategies[sym] = EnhancedRsiStrategyV4(**filtered)
                 self.logger.info(f"✅ Strategy initialized for {sym} | {cls_name}")
 
-            # Init trade log
-            self._init_live_trade_log(timeframe)
+            # Init live log collections
+            self._init_live_trade_log(timeframe, symbols, data_source)
 
             self.is_running = True
             end_time = datetime.now() + timedelta(hours=duration_hours)
@@ -591,6 +725,12 @@ class TradingBotV4:
                         self.logger.error(f"Scan error for {sym}: {e}")
                         continue
 
+                # Persist candidates for this iteration
+                try:
+                    self._log_live_candidates(candidates, iteration)
+                except Exception:
+                    pass
+
                 # Determine capacity
                 open_positions = sum(1 for s in strategies.values() if getattr(s, "_position", None) != PositionType.OUT)
                 capacity = max(0, max_open_positions - open_positions)
@@ -631,12 +771,17 @@ class TradingBotV4:
                 total_open = sum(1 for s in strategies.values() if getattr(s, "_position", None) != PositionType.OUT)
                 self.logger.info(f"⏱️ Iteration {iteration} | Open positions: {total_open} | Candidates: {len(candidates)}")
 
+                # Persist status snapshot
+                try:
+                    self._log_live_status(iteration, total_open, len(candidates))
+                except Exception:
+                    pass
+
                 # Wait for next candle based on timeframe
                 self._wait_for_next_candle(timeframe)
 
             self.logger.info("✅ Multi-symbol live scan completed")
-            if self.live_log_path:
-                self.logger.info(f"📄 Live trades log saved: {self.live_log_path}")
+            self.logger.info("📄 Live data saved to MongoDB collections: live_entries, live_exits, live_partial_exits, live_candidates, live_status")
 
         except Exception as e:
             self.logger.error(f"❌ Multi-symbol live scan error: {e}")
@@ -847,8 +992,7 @@ def main():
                     duration_hours = 1
                 bot.is_running = True
                 bot.run_multi_symbol_live_scan(symbols=symbols, timeframe=timeframe, duration_hours=duration_hours)
-                if bot.live_log_path:
-                    print(f"\n📄 Live trades log: {bot.live_log_path}")
+                print("\n📄 Live data stored in MongoDB collections: live_entries, live_exits, live_partial_exits, live_candidates, live_status")
                     
             elif choice == "6":
                 # Exit

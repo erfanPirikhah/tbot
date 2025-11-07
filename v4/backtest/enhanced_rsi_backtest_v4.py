@@ -22,6 +22,7 @@ from data.mt5_data import mt5_fetcher, MT5_AVAILABLE
 from strategies.enhanced_rsi_strategy_v4 import EnhancedRsiStrategyV4, PositionType
 from config.parameters import OPTIMIZED_PARAMS_V4
 from config.market_config import SYMBOL_MAPPING, TIMEFRAME_MAPPING, DEFAULT_CONFIG
+from utils.logger import get_mongo_collection
 
 warnings.filterwarnings('ignore')
 
@@ -58,11 +59,13 @@ class EnhancedRSIBacktestV4:
         os.makedirs(self.plots_dir, exist_ok=True)
         os.makedirs(self.trades_dir, exist_ok=True)
         os.makedirs(self.logs_dir, exist_ok=True)
+        # Unique identifier for this backtest run (used for Mongo log grouping)
+        self.run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        # اتصال فایل‌هندر به لاگر این ماژول در مسیر مشخص‌شده
+        # Optional file handler (disabled by default; set USE_FILE_LOGS=1 to enable)
         try:
-            log_path = os.path.join(self.logs_dir, f'backtest_v4_log_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log')
-            if not any(isinstance(h, logging.FileHandler) for h in logger.handlers):
+            if os.getenv("USE_FILE_LOGS", "0") == "1":
+                log_path = os.path.join(self.logs_dir, f'backtest_v4_log_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log')
                 fh = logging.FileHandler(log_path, encoding='utf-8')
                 fh.setLevel(logging.INFO)
                 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -474,6 +477,9 @@ class EnhancedRSIBacktestV4:
             
             if self.save_trade_logs:
                 self._save_detailed_trade_logs(strategy)
+
+            # Persist signals and equity to MongoDB (no file logs)
+            self._save_signals_and_equity_to_mongo(symbol, timeframe)
             
             logger.info(">>> بکتست با موفقیت انجام شد")
             return self.results
@@ -790,37 +796,102 @@ class EnhancedRSIBacktestV4:
             logger.error(f"خطا در تولید نمودارهای پیشرفته: {e}")
 
     def _save_detailed_trade_logs(self, strategy):
-        """ذخیره لاگ‌های دقیق معاملات"""
+        """ذخیره لاگ‌های دقیق معاملات در MongoDB"""
         try:
             trade_logs = []
             for trade in strategy.get_trade_history():
                 trade_log = {
-                    'entry_time': trade.entries[0].time if trade.entries else None,
-                    'entry_price': trade.entry_price,
+                    'run_id': getattr(self, "run_id", datetime.now().strftime("%Y%m%d_%H%M%S")),
+                    'entry_time': (trade.entries[0].time if trade.entries else None),
+                    'entry_price': float(trade.entry_price) if trade.entry_price is not None else None,
                     'exit_time': trade.exit_time,
-                    'exit_price': trade.exit_price,
+                    'exit_price': float(trade.exit_price) if trade.exit_price is not None else None,
                     'position_type': trade.position_type.value,
-                    'quantity': trade.quantity,
-                    'pnl_percentage': trade.pnl_percentage,
-                    'pnl_amount': trade.pnl_amount,
+                    'quantity': float(trade.quantity),
+                    'pnl_percentage': float(trade.pnl_percentage) if trade.pnl_percentage is not None else None,
+                    'pnl_amount': float(trade.pnl_amount) if trade.pnl_amount is not None else None,
                     'exit_reason': trade.exit_reason.value if trade.exit_reason else None,
-                    'stop_loss': trade.stop_loss,
-                    'take_profit': trade.take_profit,
+                    'stop_loss': float(trade.stop_loss) if trade.stop_loss is not None else None,
+                    'take_profit': float(trade.take_profit) if trade.take_profit is not None else None,
                     'partial_exits': len(trade.partial_exits)
                 }
                 trade_logs.append(trade_log)
-            
-            # ذخیره به صورت JSON
-            ts = datetime.now().strftime('%Y%m%d_%H%M%S')
-            log_filename = os.path.join(self.trades_dir, f"detailed_trades_{ts}.json")
-            with open(log_filename, 'w', encoding='utf-8') as f:
-                json.dump(trade_logs, f, indent=2, default=str)
-            
-            logger.info(f">>> لاگ‌های دقیق معاملات در {log_filename} ذخیره شد")
-            
-        except Exception as e:
-            logger.error(f"خطا در ذخیره لاگ معاملات: {e}")
 
+            coll = get_mongo_collection("backtest_trades")
+            if coll is not None and trade_logs:
+                coll.insert_many(trade_logs)
+                logger.info(">>> لاگ‌های دقیق معاملات داخل MongoDB (collection: backtest_trades) ذخیره شد")
+            else:
+                logger.warning("MongoDB در دسترس نیست؛ هیچ لاگی ذخیره نشد")
+
+        except Exception as e:
+            logger.error(f"خطا در ذخیره لاگ معاملات در MongoDB: {e}")
+
+    def _save_signals_and_equity_to_mongo(self, symbol: str, timeframe: str):
+        """ذخیره سیگنال‌ها و منحنی سرمایه در MongoDB برای گزارش‌گیری کامل"""
+        try:
+            run_id = getattr(self, "run_id", datetime.now().strftime("%Y%m%d_%H%M%S"))
+            # Save signals
+            if hasattr(self, "signals_df") and self.signals_df is not None and not self.signals_df.empty:
+                sig_coll = get_mongo_collection("backtest_signals")
+                if sig_coll is not None:
+                    records = []
+                    for _, row in self.signals_df.iterrows():
+                        rec = {
+                            "run_id": run_id,
+                            "symbol": symbol,
+                            "timeframe": timeframe,
+                            "timestamp": row.get("timestamp"),
+                            "action": row.get("action"),
+                            "price": float(row.get("price")) if "price" in row and pd.notna(row["price"]) else None,
+                            "position": row.get("position"),
+                            "reason": row.get("reason"),
+                            "pnl_percentage": float(row.get("pnl_percentage")) if "pnl_percentage" in row and pd.notna(row["pnl_percentage"]) else None,
+                            "exit_reason": row.get("exit_reason") if "exit_reason" in row else None,
+                            "market_condition": row.get("market_condition") if "market_condition" in row else None,
+                        }
+                        records.append(rec)
+                    if records:
+                        sig_coll.insert_many(records)
+
+            # Save equity curve
+            if self.equity_curve is not None and not self.equity_curve.empty:
+                eq_coll = get_mongo_collection("backtest_equity")
+                if eq_coll is not None:
+                    eq_records = []
+                    for ts, row in self.equity_curve.iterrows():
+                        eq_records.append({
+                            "run_id": run_id,
+                            "symbol": symbol,
+                            "timeframe": timeframe,
+                            "timestamp": ts,
+                            "portfolio_value": float(row.get("portfolio_value")),
+                            "price": float(row.get("price")) if "price" in row and pd.notna(row["price"]) else None,
+                            "market_condition": row.get("market_condition"),
+                        })
+                    if eq_records:
+                        eq_coll.insert_many(eq_records)
+
+            # Save run summary
+            try:
+                runs_coll = get_mongo_collection("backtest_runs")
+                if runs_coll is not None:
+                    runs_coll.insert_one({
+                        "run_id": run_id,
+                        "symbol": symbol,
+                        "timeframe": timeframe,
+                        "started_at": self.results.get('data_info', {}).get('start_date'),
+                        "ended_at": self.results.get('data_info', {}).get('end_date'),
+                        "metrics": self.results.get('performance_metrics', {}),
+                        "strategy_metrics": self.results.get('strategy_metrics', {}),
+                        "strategy_name": self.results.get('strategy_name')
+                    })
+            except Exception:
+                pass
+
+        except Exception as e:
+            logger.error(f"خطا در ذخیره سیگنال/اکوئیتی در MongoDB: {e}")
+ 
     def generate_comprehensive_report(self) -> str:
         """تولید گزارش جامع"""
         if not self.results:
