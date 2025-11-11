@@ -15,6 +15,9 @@ from .enhanced_rsi_strategy_v4 import (
     ExitReason,
 )
 
+# Import AdvancedMarketFilters
+from .advanced_filters import AdvancedMarketFilters
+
 logger = logging.getLogger(__name__)
 
 
@@ -89,6 +92,14 @@ class EnsembleRsiStrategyV4:
         vol_sl_min_multiplier: float = 1.5,     # enforce at least 1.5x ATR for SL
         vol_sl_high_multiplier: float = 2.2,    # widen SL in volatile regimes
         bb_width_vol_threshold: Optional[float] = 0.015,  # BB width threshold to detect volatility
+
+        # Advanced Filters (new addition)
+        enable_advanced_filters: bool = True,
+        advanced_filter_confidence_threshold: float = 0.7,
+        market_strength_min_score: float = 3.0,
+        support_resistance_check: bool = True,
+        divergence_check: bool = True,
+        volatility_band_check: bool = True,
     ):
         # Parameters
         self.rsi_period = rsi_period
@@ -136,6 +147,14 @@ class EnsembleRsiStrategyV4:
         self.vol_sl_min_multiplier = vol_sl_min_multiplier
         self.vol_sl_high_multiplier = vol_sl_high_multiplier
         self.bb_width_vol_threshold = bb_width_vol_threshold
+
+        # Advanced Filter params
+        self.enable_advanced_filters = enable_advanced_filters
+        self.advanced_filter_confidence_threshold = advanced_filter_confidence_threshold
+        self.market_strength_min_score = market_strength_min_score
+        self.support_resistance_check = support_resistance_check
+        self.divergence_check = divergence_check
+        self.volatility_band_check = volatility_band_check
 
         # State
         self._position = PositionType.OUT
@@ -483,7 +502,7 @@ class EnsembleRsiStrategyV4:
 
     def check_entry_conditions(self, df: pd.DataFrame, position_type: PositionType) -> Tuple[bool, List[str]]:
         """
-        Gate entries for LONG/SHORT using ensemble scores plus basic session/spacing throttle.
+        Gate entries for LONG/SHORT using ensemble scores plus basic session/spacing throttle + advanced filters.
         Returns (eligible: bool, messages: List[str])
         """
         try:
@@ -506,6 +525,11 @@ class EnsembleRsiStrategyV4:
             if recent_trades >= self.max_trades_per_100:
                 return False, [f"Throttle {recent_trades}/{self.max_trades_per_100}"]
 
+            # Advanced market filters (new integration)
+            advanced_filter_ok, advanced_conditions = self._evaluate_advanced_filters(df, position_type)
+            if not advanced_filter_ok:
+                return False, advanced_conditions
+
             # Aggregate ensemble scores
             long_score, short_score, msgs = self._aggregate_scores(df)
 
@@ -519,7 +543,12 @@ class EnsembleRsiStrategyV4:
                     and (short_score >= long_score * self.dominance_ratio)
                 )
 
-            return bool(eligible), msgs
+            # If eligible based on ensemble but not meeting advanced filter requirements, be more selective
+            if eligible:
+                # Combine ensemble and advanced filter conditions
+                return True, msgs + advanced_conditions
+            else:
+                return False, msgs
 
         except Exception as e:
             logger.error(f"check_entry_conditions error: {e}")
@@ -894,3 +923,74 @@ class EnsembleRsiStrategyV4:
         self._signal_log = []
         self._original_risk = self.risk_per_trade
         logger.info("Ensemble strategy state reset complete")
+
+    def _evaluate_advanced_filters(self, df: pd.DataFrame, position_type: PositionType) -> Tuple[bool, List[str]]:
+        """Evaluate advanced market filters to enhance entry decisions in ensemble strategy"""
+        conditions = []
+        
+        # Check if advanced filters are enabled
+        if not self.enable_advanced_filters:
+            return True, ["Advanced filters disabled"]
+        
+        try:
+            # Market regime detection
+            regime_info = AdvancedMarketFilters.detect_market_regime(df)
+            conditions.append(f"Regime: {regime_info['regime']} (Conf: {regime_info['confidence']})")
+            
+            # Only trade in favorable market conditions based on position type
+            if position_type == PositionType.LONG:
+                # For long trades, prefer bullish or neutral regimes
+                if (regime_info['regime'] == 'BEARISH' and 
+                    regime_info['confidence'] > self.advanced_filter_confidence_threshold):
+                    return False, [f"Regime filter: Avoiding long in bearish market ({regime_info['confidence']}>{self.advanced_filter_confidence_threshold})"]
+            elif position_type == PositionType.SHORT:
+                # For short trades, prefer bearish or neutral regimes
+                if (regime_info['regime'] == 'BULLISH' and 
+                    regime_info['confidence'] > self.advanced_filter_confidence_threshold):
+                    return False, [f"Regime filter: Avoiding short in bullish market ({regime_info['confidence']}>{self.advanced_filter_confidence_threshold})"]
+            
+            # Trend strength check
+            trend_info = AdvancedMarketFilters.calculate_trend_strength(df)
+            conditions.append(f"Trend: {trend_info['direction']} (Str: {trend_info['strength']})")
+            
+            # Support/Resistance levels (only if enabled)
+            if self.support_resistance_check:
+                support, resistance = AdvancedMarketFilters.calculate_support_resistance(df)
+                current_price = df['close'].iloc[-1]
+                
+                if position_type == PositionType.LONG and current_price > resistance:
+                    conditions.append(f"Price above resistance: {resistance:.4f}")
+                elif position_type == PositionType.SHORT and current_price < support:
+                    conditions.append(f"Price below support: {support:.4f}")
+            
+            # Volatility bands position (only if enabled)
+            if self.volatility_band_check:
+                vol_bands = AdvancedMarketFilters.calculate_volatility_bands(df)
+                position_in_band = vol_bands['price_position']
+                
+                # For LONG positions, prefer when price is not too high in the band
+                if position_type == PositionType.LONG and position_in_band > 0.8:
+                    conditions.append(f"Price too high in volatility band ({position_in_band:.2f})")
+                # For SHORT positions, prefer when price is not too low in the band
+                elif position_type == PositionType.SHORT and position_in_band < 0.2:
+                    conditions.append(f"Price too low in volatility band ({position_in_band:.2f})")
+            
+            # Divergence detection (only if enabled)
+            if self.divergence_check:
+                divergence_info = AdvancedMarketFilters.detect_divergence(df)
+                if divergence_info['divergence'] != 'NONE':
+                    conditions.append(f"Divergence: {divergence_info['divergence']} ({divergence_info.get('type', 'N/A')})")
+            
+            # Market strength score
+            strength_score = AdvancedMarketFilters.get_market_strength_score(df)
+            conditions.append(f"Market strength: {strength_score}/10")
+            
+            # Only allow trades in moderate to strong market conditions
+            if strength_score < self.market_strength_min_score:
+                return False, [f"Market strength too low ({strength_score}<{self.market_strength_min_score})"]
+            
+            return True, conditions
+
+        except Exception as e:
+            logger.error(f"Error in ensemble advanced filters evaluation: {e}")
+            return True, [f"Advanced filters error: {e} (Proceeding with basic conditions)"]
