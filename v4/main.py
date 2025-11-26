@@ -339,6 +339,11 @@ class TradingBotV4:
                     # Process signal
                     self._process_signal(signal, data)
 
+                    # Calculate and display real-time PnL if position is open
+                    pnl_data = self._calculate_real_time_pnl(data)
+                    if pnl_data:
+                        self._display_real_time_pnl(pnl_data)
+
                     # Persist live entry/exit to dedicated collections
                     try:
                         action = signal.get('action', 'HOLD')
@@ -427,6 +432,113 @@ class TradingBotV4:
                 
         except Exception as e:
             self.logger.error(f"Error processing signal: {e}")
+
+    def _calculate_strategy_real_time_pnl(self, strategy, data: pd.DataFrame, symbol: str) -> Optional[Dict[str, Any]]:
+        """Calculate real-time PnL for a single strategy"""
+        try:
+            if (getattr(strategy, "_position", None) and 
+                strategy._position != PositionType.OUT and 
+                getattr(strategy, "_current_trade", None)):
+                
+                current_price = data['close'].iloc[-1]
+                entry_price = strategy._current_trade.entry_price
+                position_type = strategy._position
+
+                if position_type == PositionType.LONG:
+                    pnl_percentage = ((current_price - entry_price) / entry_price) * 100
+                else:  # SHORT
+                    pnl_percentage = ((entry_price - current_price) / entry_price) * 100
+
+                # Calculate dollar PnL based on position size
+                position_size = strategy._current_trade.quantity
+                pnl_amount = pnl_percentage * (position_size * entry_price) / 100
+
+                return {
+                    'symbol': symbol,
+                    'current_price': current_price,
+                    'entry_price': entry_price,
+                    'position_type': position_type.value,
+                    'pnl_percentage': pnl_percentage,
+                    'pnl_amount': pnl_amount,
+                    'stop_loss': strategy._current_trade.stop_loss,
+                    'take_profit': strategy._current_trade.take_profit,
+                    'time_in_position': len(data) - strategy._last_trade_index
+                }
+        except Exception as e:
+            self.logger.error(f"Error calculating strategy real-time PnL: {e}")
+            return None
+
+    def _display_strategy_real_time_pnl(self, pnl_data: Dict[str, Any]):
+        """Display real-time PnL information for a single strategy"""
+        try:
+            symbol = pnl_data['symbol']
+            position_type = pnl_data['position_type']
+            pnl_percentage = pnl_data['pnl_percentage']
+            pnl_amount = pnl_data['pnl_amount']
+            current_price = pnl_data['current_price']
+            entry_price = pnl_data['entry_price']
+            stop_loss = pnl_data['stop_loss']
+            take_profit = pnl_data['take_profit']
+            time_in_pos = pnl_data['time_in_position']
+
+            pnl_sign = "🟢" if pnl_percentage >= 0 else "🔴"
+            pnl_status = f"{pnl_sign} PnL: {pnl_percentage:+.2f}% (${pnl_amount:+.2f})"
+            
+            self.logger.info(f"📈 {symbol} {position_type} | {pnl_status} | Price: {current_price:.4f} | Entry: {entry_price:.4f} | SL: {stop_loss:.4f} | TP: {take_profit:.4f} | Bars: {time_in_pos}")
+        except Exception as e:
+            self.logger.error(f"Error displaying strategy real-time PnL: {e}")
+
+    def _calculate_real_time_pnl(self, data: pd.DataFrame) -> Optional[Dict[str, Any]]:
+        """Calculate real-time PnL for open positions"""
+        try:
+            if self.current_position == "OUT" or self.strategy is None or self.strategy._current_trade is None:
+                return None
+
+            current_price = data['close'].iloc[-1]
+            entry_price = self.strategy._current_trade.entry_price
+            position_type = self.strategy._position
+
+            if position_type == PositionType.LONG:
+                pnl_percentage = ((current_price - entry_price) / entry_price) * 100
+            else:  # SHORT
+                pnl_percentage = ((entry_price - current_price) / entry_price) * 100
+
+            # Calculate dollar PnL based on position size
+            position_size = self.strategy._current_trade.quantity
+            pnl_amount = pnl_percentage * (position_size * entry_price) / 100
+
+            return {
+                'current_price': current_price,
+                'entry_price': entry_price,
+                'position_type': position_type.value,
+                'pnl_percentage': pnl_percentage,
+                'pnl_amount': pnl_amount,
+                'stop_loss': self.strategy._current_trade.stop_loss,
+                'take_profit': self.strategy._current_trade.take_profit,
+                'time_in_position': len(data) - self.strategy._last_trade_index
+            }
+        except Exception as e:
+            self.logger.error(f"Error calculating real-time PnL: {e}")
+            return None
+
+    def _display_real_time_pnl(self, pnl_data: Dict[str, Any]):
+        """Display real-time PnL information"""
+        try:
+            position_type = pnl_data['position_type']
+            pnl_percentage = pnl_data['pnl_percentage']
+            pnl_amount = pnl_data['pnl_amount']
+            current_price = pnl_data['current_price']
+            entry_price = pnl_data['entry_price']
+            stop_loss = pnl_data['stop_loss']
+            take_profit = pnl_data['take_profit']
+            time_in_pos = pnl_data['time_in_position']
+
+            pnl_sign = "🟢" if pnl_percentage >= 0 else "🔴"
+            pnl_status = f"{pnl_sign} PnL: {pnl_percentage:+.2f}% (${pnl_amount:+.2f})"
+            
+            self.logger.info(f"📈 {position_type} Position | {pnl_status} | Price: {current_price:.4f} | Entry: {entry_price:.4f} | SL: {stop_loss:.4f} | TP: {take_profit:.4f} | Bars: {time_in_pos}")
+        except Exception as e:
+            self.logger.error(f"Error displaying real-time PnL: {e}")
 
     def _display_status(self, iteration: int):
         """Display current status"""
@@ -791,6 +903,14 @@ class TradingBotV4:
                             }
                             self._append_live_trade_log(record)
                             self.trade_logger.info(f"🎯 {action} {sym} @ {record['price']:.5f}")
+
+                # Calculate and display real-time PnL for each open position
+                for sym, strat in strategies.items():
+                    df = data_cache.get(sym)
+                    if df is not None and not df.empty:
+                        pnl_data = self._calculate_strategy_real_time_pnl(strat, df, sym)
+                        if pnl_data:
+                            self._display_strategy_real_time_pnl(pnl_data)
 
                 # Status every iteration
                 total_open = sum(1 for s in strategies.values() if getattr(s, "_position", None) != PositionType.OUT)

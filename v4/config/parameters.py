@@ -52,7 +52,15 @@ OPTIMIZED_PARAMS_V4 = {
     'mtf_long_rsi_min': 50.0,         # حداقل RSI در HTF برای LONG
     'mtf_short_rsi_max': 50.0,        # حداکثر RSI در HTF برای SHORT
     'mtf_trend_ema_fast': 21,         # EMA سریع تایم‌فریم بالاتر
-    'mtf_trend_ema_slow': 50          # EMA کند تایم‌فریم بالاتر
+    'mtf_trend_ema_slow': 50,         # EMA کند تایم‌فریم بالاتر
+
+    # Advanced Filters (new addition)
+    'enable_advanced_filters': True,  # Enable advanced market regime and condition filters
+    'advanced_filter_confidence_threshold': 0.7,  # Minimum confidence for market regime
+    'market_strength_min_score': 3.0,  # Minimum market strength score (0-10)
+    'support_resistance_check': True,  # Check price against support/resistance levels
+    'divergence_check': True,  # Check for RSI-price divergence
+    'volatility_band_check': True,  # Check price position in volatility bands  
 }
 
 # 🔥 پارامترهای محافظه‌کارانه (برای حساب‌های بزرگ)
@@ -91,7 +99,15 @@ CONSERVATIVE_PARAMS = {
     
     'require_rsi_confirmation': True,
     'require_price_confirmation': True,
-    'confirmation_candles': 2
+    'confirmation_candles': 2,
+
+    # Advanced Filters (new addition)
+    'enable_advanced_filters': True,  # Enable advanced market regime and condition filters
+    'advanced_filter_confidence_threshold': 0.6,  # Conservative threshold
+    'market_strength_min_score': 3.5,  # Slightly higher for conservative approach
+    'support_resistance_check': True,  # Check price against support/resistance levels
+    'divergence_check': True,  # Check for RSI-price divergence
+    'volatility_band_check': True,  # Check price position in volatility bands
 }
 
 # 🔥 پارامترهای پرریسک (برای تریدرهای حرفه‌ای)
@@ -130,7 +146,15 @@ AGGRESSIVE_PARAMS = {
     
     'require_rsi_confirmation': False,
     'require_price_confirmation': False,
-    'confirmation_candles': 1
+    'confirmation_candles': 1,
+
+    # Advanced Filters (new addition)
+    'enable_advanced_filters': True,  # Enable advanced market regime and condition filters
+    'advanced_filter_confidence_threshold': 0.65,  # Moderate threshold for aggressive approach
+    'market_strength_min_score': 2.5,  # Lower threshold for aggressive approach
+    'support_resistance_check': True,  # Check price against support/resistance levels
+    'divergence_check': True,  # Check for RSI-price divergence
+    'volatility_band_check': True,  # Check price position in volatility bands
 }
 
 # 🎯 پارامترهای Ensemble برای M5 و M15
@@ -171,6 +195,14 @@ ENSEMBLE_SCALPING_M5 = {
     'vol_sl_min_multiplier': 1.5,       # enforce minimum SL width
     'vol_sl_high_multiplier': 2.2,      # widen SL under high volatility
     'bb_width_vol_threshold': 0.015,    # BB width threshold to detect volatile regime
+
+    # Advanced Filters (new addition)
+    'enable_advanced_filters': True,  # Enable advanced market regime and condition filters
+    'advanced_filter_confidence_threshold': 0.65,  # Moderate threshold for scalping
+    'market_strength_min_score': 2.8,  # Appropriate for scalping approach
+    'support_resistance_check': True,  # Check price against support/resistance levels
+    'divergence_check': True,  # Check for RSI-price divergence
+    'volatility_band_check': True,  # Check price position in volatility bands
 }
 
 ENSEMBLE_INTRADAY_M15 = {
@@ -210,6 +242,14 @@ ENSEMBLE_INTRADAY_M15 = {
     'vol_sl_min_multiplier': 1.5,
     'vol_sl_high_multiplier': 2.2,
     'bb_width_vol_threshold': 0.015,
+
+    # Advanced Filters (new addition)
+    'enable_advanced_filters': True,  # Enable advanced market regime and condition filters
+    'advanced_filter_confidence_threshold': 0.65,  # Moderate threshold for intraday
+    'market_strength_min_score': 3.0,  # Appropriate for intraday approach
+    'support_resistance_check': True,  # Check price against support/resistance levels
+    'divergence_check': True,  # Check for RSI-price divergence
+    'volatility_band_check': True,  # Check price position in volatility bands
 }
 
 # ✅ H1 profile tuned for higher win rate and realistic TP/SL
@@ -243,7 +283,15 @@ ENHANCED_INTRADAY_H1 = {
     'partial_exit_threshold': 1.0,
 
     # Disable strict MTF gating for H1 to avoid over-filtering entries
-    'enable_mtf': False
+    'enable_mtf': False,
+
+    # Advanced Filters (new addition)
+    'enable_advanced_filters': True,  # Enable advanced market regime and condition filters
+    'advanced_filter_confidence_threshold': 0.65,  # Moderate threshold for H1
+    'market_strength_min_score': 3.0,  # Appropriate for H1 approach
+    'support_resistance_check': True,  # Check price against support/resistance levels
+    'divergence_check': True,  # Check for RSI-price divergence
+    'volatility_band_check': True,  # Check price position in volatility bands
 }
 
 # تنظیمات بر اساس شرایط مختلف بازار
@@ -254,7 +302,15 @@ MARKET_CONDITION_PARAMS = {
         'risk_per_trade': 0.018,
         'stop_loss_atr_multiplier': 1.8,
         'enable_trend_filter': False,
-        'enable_short_trades': True
+        'enable_short_trades': True,
+
+        # Advanced Filters (new addition)
+        'enable_advanced_filters': True,  # Enable advanced market regime and condition filters
+        'advanced_filter_confidence_threshold': 0.75,  # Higher threshold for trending markets
+        'market_strength_min_score': 3.5,  # Higher threshold for trending markets
+        'support_resistance_check': True,  # Check price against support/resistance levels
+        'divergence_check': True,  # Check for RSI-price divergence
+        'volatility_band_check': True,  # Check price position in volatility bands
     },
     "RANGING": {
         'rsi_oversold': 30,
@@ -262,7 +318,15 @@ MARKET_CONDITION_PARAMS = {
         'risk_per_trade': 0.012,
         'stop_loss_atr_multiplier': 2.2,
         'enable_trend_filter': False,
-        'enable_short_trades': True
+        'enable_short_trades': True,
+
+        # Advanced Filters (new addition)
+        'enable_advanced_filters': True,  # Enable advanced market regime and condition filters
+        'advanced_filter_confidence_threshold': 0.65,  # Moderate threshold for ranging markets
+        'market_strength_min_score': 3.0,  # Moderate threshold for ranging markets
+        'support_resistance_check': True,  # Check price against support/resistance levels
+        'divergence_check': True,  # Check for RSI-price divergence
+        'volatility_band_check': True,  # Check price position in volatility bands
     },
     "VOLATILE": {
         'rsi_oversold': 35,
@@ -270,7 +334,15 @@ MARKET_CONDITION_PARAMS = {
         'risk_per_trade': 0.01,
         'stop_loss_atr_multiplier': 2.5,
         'enable_volatility_filter': False,  # 🔥 حتی در نوسان هم فعال
-        'enable_short_trades': True
+        'enable_short_trades': True,
+
+        # Advanced Filters (new addition)
+        'enable_advanced_filters': True,  # Enable advanced market regime and condition filters
+        'advanced_filter_confidence_threshold': 0.6,  # Lower threshold for volatile markets
+        'market_strength_min_score': 2.5,  # Lower threshold for volatile markets
+        'support_resistance_check': True,  # Check price against support/resistance levels
+        'divergence_check': True,  # Check for RSI-price divergence
+        'volatility_band_check': True,  # Check price position in volatility bands
     },
     "SCALPING": {
         'rsi_period': 9,
@@ -284,7 +356,15 @@ MARKET_CONDITION_PARAMS = {
         'min_candles_between': 2,
         'max_trade_duration': 30,
         'trailing_activation_percent': 0.3,
-        'partial_exit_threshold': 0.5
+        'partial_exit_threshold': 0.5,
+
+        # Advanced Filters (new addition)
+        'enable_advanced_filters': True,  # Enable advanced market regime and condition filters
+        'advanced_filter_confidence_threshold': 0.6,  # Lower threshold for scalping
+        'market_strength_min_score': 2.8,  # Appropriate for scalping approach
+        'support_resistance_check': True,  # Check price against support/resistance levels
+        'divergence_check': True,  # Check for RSI-price divergence
+        'volatility_band_check': True,  # Check price position in volatility bands
     }
 }
 
@@ -301,7 +381,15 @@ TEST_PARAMS = {
     'min_candles_between': 3,
     'max_trades_per_100': 40,
     'trailing_activation_percent': 1.0,
-    'partial_exit_threshold': 1.5
+    'partial_exit_threshold': 1.5,
+
+    # Advanced Filters (new addition)
+    'enable_advanced_filters': True,  # Enable advanced market regime and condition filters
+    'advanced_filter_confidence_threshold': 0.65,  # Moderate threshold for testing
+    'market_strength_min_score': 3.0,  # Standard threshold for testing
+    'support_resistance_check': True,  # Check price against support/resistance levels
+    'divergence_check': True,  # Check for RSI-price divergence
+    'volatility_band_check': True,  # Check price position in volatility bands
 }
 
 # 🎯 انتخاب خودکار بهترین پارامتر
