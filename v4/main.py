@@ -23,6 +23,7 @@ from utils.logger import setup_logger, get_trade_logger, get_performance_logger,
 from data.data_fetcher import DataFetcher
 from strategies.enhanced_rsi_strategy_v4 import EnhancedRsiStrategyV4, PositionType
 from strategies.ensemble_strategy_v4 import EnsembleRsiStrategyV4
+from diagnostic.diagnostic_enhanced_rsi_strategy import DiagnosticEnhancedRsiStrategy
 from backtest.enhanced_rsi_backtest_v4 import EnhancedRSIBacktestV4
 from config.parameters import OPTIMIZED_PARAMS_V4, MARKET_CONDITION_PARAMS, get_best_params_for_timeframe
 from config.market_config import SYMBOL_MAPPING, TIMEFRAME_MAPPING, DEFAULT_CONFIG
@@ -85,11 +86,16 @@ class TradingBotV4:
             target_cls = EnhancedRsiStrategyV4
             if cls_name == 'EnsembleRsiStrategyV4':
                 target_cls = EnsembleRsiStrategyV4
+            elif cls_name == 'DiagnosticEnhancedRsiStrategy':
+                target_cls = DiagnosticEnhancedRsiStrategy
 
             # Build valid parameter set from selected class
             sig = inspect.signature(target_cls.__init__)
             valid_params = set(sig.parameters.keys())
             valid_params.discard('self')
+            # Remove diagnostic_system parameter if it's not needed for regular strategies
+            if cls_name != 'DiagnosticEnhancedRsiStrategy':
+                valid_params.discard('diagnostic_system')
 
             # Filter map to selected class signature
             filtered_params = {k: v for k, v in (strategy_params or {}).items() if k in valid_params}
@@ -99,7 +105,7 @@ class TradingBotV4:
             removed_params_without_meta = removed_params - {'strategy_class'}
             if removed_params_without_meta:
                 self.logger.warning(f"⚠️ Removed incompatible parameters: {removed_params_without_meta}")
-            
+
             return filtered_params
 
         except Exception as e:
@@ -120,21 +126,32 @@ class TradingBotV4:
         else:
             return 'CONSERVATIVE_PARAMS'
 
-    def initialize_strategy(self, strategy_params: Dict[str, Any] = None):
+    def initialize_strategy(self, strategy_params: Dict[str, Any] = None, use_diagnostic: bool = False):
         """Initialize strategy (supports Ensemble via 'strategy_class')."""
         try:
             if strategy_params is None:
                 strategy_params = OPTIMIZED_PARAMS_V4
 
             cls_name = (strategy_params or {}).get('strategy_class', 'EnhancedRsiStrategyV4')
-            filtered_params = self._filter_strategy_params(strategy_params)
 
-            if cls_name == 'EnsembleRsiStrategyV4':
-                self.strategy = EnsembleRsiStrategyV4(**filtered_params)
-                self.logger.info("✅ Ensemble RSI Strategy V4 initialized")
+            # If specifically told to use diagnostic or if the class name requires it
+            if use_diagnostic or cls_name == 'DiagnosticEnhancedRsiStrategy':
+                from diagnostic.diagnostic_system import DiagnosticSystem
+                diagnostic_system = DiagnosticSystem()
+                # Filter params to remove diagnostic_system if it's already in filtered_params
+                filtered_params = self._filter_strategy_params(strategy_params)
+                filtered_params['diagnostic_system'] = diagnostic_system
+                self.strategy = DiagnosticEnhancedRsiStrategy(**filtered_params)
+                self.logger.info("✅ Diagnostic Enhanced RSI Strategy V4 initialized")
             else:
-                self.strategy = EnhancedRsiStrategyV4(**filtered_params)
-                self.logger.info("✅ RSI Strategy Version 4 initialized")
+                filtered_params = self._filter_strategy_params(strategy_params)
+
+                if cls_name == 'EnsembleRsiStrategyV4':
+                    self.strategy = EnsembleRsiStrategyV4(**filtered_params)
+                    self.logger.info("✅ Ensemble RSI Strategy V4 initialized")
+                else:
+                    self.strategy = EnhancedRsiStrategyV4(**filtered_params)
+                    self.logger.info("✅ RSI Strategy Version 4 initialized")
 
             # Common param logging if available
             rsi_period = filtered_params.get('rsi_period')
@@ -235,12 +252,15 @@ class TradingBotV4:
         symbol: str = "EURUSD",
         timeframe: str = "H1",
         days_back: int = 90,
-        strategy_params: Dict[str, Any] = None
+        strategy_params: Dict[str, Any] = None,
+        use_diagnostic: bool = False
     ) -> Dict[str, Any]:
         """Run complete backtest"""
         try:
             self.logger.info("🎯 Starting complete backtest")
-            
+            if use_diagnostic:
+                self.logger.info("🔬 Running in diagnostic mode with comprehensive logging")
+
             # Auto-select params by timeframe when not provided (enables Ensemble on M5/M15)
             if strategy_params is None:
                 try:
@@ -250,15 +270,20 @@ class TradingBotV4:
                 except Exception as e:
                     self.logger.warning(f"Param auto-selection failed, falling back to defaults: {e}")
                     strategy_params = OPTIMIZED_PARAMS_V4
-            
-            # Initialize strategy
-            if not self.initialize_strategy(strategy_params):
+
+            # Initialize strategy with diagnostic support if requested
+            if use_diagnostic:
+                strategy_params = strategy_params or OPTIMIZED_PARAMS_V4
+                # Force diagnostic strategy if requested
+                strategy_params = strategy_params.copy()
+                strategy_params['strategy_class'] = 'DiagnosticEnhancedRsiStrategy'
+            if not self.initialize_strategy(strategy_params, use_diagnostic=use_diagnostic):
                 raise Exception("Error initializing strategy")
-            
+
             # Initialize backtest
             if not self.initialize_backtest():
                 raise Exception("Error initializing backtest engine")
-            
+
             # Run backtest
             results = self.backtest_engine.run_backtest(
                 symbol=symbol,
@@ -266,19 +291,19 @@ class TradingBotV4:
                 days_back=days_back,
                 strategy_params=strategy_params
             )
-            
+
             # Display results
             report = self.backtest_engine.generate_comprehensive_report()
             print("\n" + "="*80)
             print("Backtest Results")
             print("="*80)
             print(report)
-            
+
             # Save results
             self._save_backtest_results(results, symbol, timeframe)
-            
+
             return results
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error running backtest: {e}")
             raise
@@ -925,8 +950,9 @@ def main():
             print("3. Live Simulation")
             print("4. Show Available Symbols")
             print("5. Test Data Fetching")
+            print("6. Run Comprehensive Diagnostic Analysis")
             print("7. Multi-Symbol Live Scan (M1/M5)")
-            print("6. Exit")
+            print("8. Exit")
             
             choice = input("\nPlease select an option: ").strip()
             
@@ -940,11 +966,14 @@ def main():
                 print("\n🎯 Running custom backtest...")
                 symbol = input("Symbol (default: EURUSD): ").strip() or "EURUSD"
                 timeframe = input("Timeframe (default: H1): ").strip() or "H1"
-                
+
                 days = input("Days back (default: 90): ").strip()
                 days_back = int(days) if days.isdigit() else 90
-                
-                bot.run_backtest(symbol=symbol, timeframe=timeframe, days_back=days_back)
+
+                diagnostic_choice = input("Run in diagnostic mode? (y/N): ").strip().lower()
+                use_diagnostic = diagnostic_choice == 'y'
+
+                bot.run_backtest(symbol=symbol, timeframe=timeframe, days_back=days_back, use_diagnostic=use_diagnostic)
                 
             elif choice == "3":
                 # Live simulation
@@ -978,6 +1007,16 @@ def main():
                 except Exception as e:
                     print(f"❌ Error: {e}")
             
+            elif choice == "6":
+                # Comprehensive Diagnostic Analysis
+                print("\n🔬 Running comprehensive diagnostic analysis...")
+                from diagnostic.main_diagnostic import run_complete_diagnostic_analysis
+                try:
+                    results = run_complete_diagnostic_analysis()
+                    print("Diagnostic analysis completed successfully!")
+                except Exception as e:
+                    print(f"Error in diagnostic analysis: {e}")
+
             elif choice == "7":
                 # Multi-symbol live scan (M1/M5)
                 print("\n🔄 Starting multi-symbol live scan...")
@@ -993,8 +1032,8 @@ def main():
                 bot.is_running = True
                 bot.run_multi_symbol_live_scan(symbols=symbols, timeframe=timeframe, duration_hours=duration_hours)
                 print("\n📄 Live data stored in MongoDB collections: live_entries, live_exits, live_partial_exits, live_candidates, live_status")
-                    
-            elif choice == "6":
+
+            elif choice == "8":
                 # Exit
                 print("\n👋 Goodbye!")
                 bot.stop()
