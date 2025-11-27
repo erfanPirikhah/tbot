@@ -1071,8 +1071,9 @@ def main():
             print("4. Show Available Symbols")
             print("5. Test Data Fetching")
             print("6. Run Comprehensive Diagnostic Analysis")
-            print("7. Multi-Symbol Live Scan (M1/M5)")
-            print("8. Exit")
+            print("7. Export Diagnostic Analysis Data")
+            print("8. Multi-Symbol Live Scan (M1/M5)")
+            print("9. Exit")
             
             choice = input("\nPlease select an option: ").strip()
             
@@ -1138,6 +1139,49 @@ def main():
                     print(f"Error in diagnostic analysis: {e}")
 
             elif choice == "7":
+                # Export Diagnostic Analysis
+                print("\n📊 Exporting diagnostic analysis data...")
+                from diagnostic.export_analysis import DiagnosticDataExporter
+                try:
+                    exporter = DiagnosticDataExporter()
+
+                    # Ask for specific test ID or all
+                    test_choice = input("Enter specific test ID (or press Enter for all tests): ").strip()
+                    test_id = test_choice if test_choice else None
+
+                    # Ask for export format
+                    format_choice = input("Export format (json/csv/both) [default: both]: ").strip().lower()
+                    if format_choice not in ['json', 'csv', 'both']:
+                        format_choice = 'both'
+
+                    # Ask for output directory
+                    output_dir = input("Output directory [default: analysis_exports]: ").strip()
+                    if not output_dir:
+                        output_dir = 'analysis_exports'
+
+                    # Perform export
+                    if format_choice == 'json':
+                        json_path = exporter.export_to_json(test_id, output_dir)
+                        print(f"✅ JSON export completed: {json_path}")
+                    elif format_choice == 'csv':
+                        csv_paths = exporter.export_to_csv(test_id, output_dir)
+                        print(f"✅ CSV exports completed:")
+                        for collection, path in csv_paths.items():
+                            print(f"  {collection}: {path}")
+                    else:  # both
+                        paths = exporter.export_detailed_analysis(test_id, output_dir)
+                        print(f"✅ Detailed analysis export completed:")
+                        print(f"  JSON: {paths['json']}")
+                        print(f"  Report: {paths['report']}")
+                        print(f"  CSV files: {list(paths['csv'].values())}")
+                        print(f"\nPerformance Summary:")
+                        for key, value in paths['summary'].items():
+                            print(f"  {key}: {value}")
+
+                except Exception as e:
+                    print(f"Error in exporting diagnostic data: {e}")
+
+            elif choice == "8":
                 # Multi-symbol live scan (M1/M5)
                 print("\n🔄 Starting multi-symbol live scan...")
                 symbols_input = input("Symbols (comma separated, default: BTC,ETH,ADA,XRP,SOL): ").strip() or "BTC,ETH,ADA,XRP,SOL"
@@ -1153,7 +1197,7 @@ def main():
                 bot.run_multi_symbol_live_scan(symbols=symbols, timeframe=timeframe, duration_hours=duration_hours)
                 print("\n📄 Live data stored in MongoDB collections: live_entries, live_exits, live_partial_exits, live_candidates, live_status")
 
-            elif choice == "8":
+            elif choice == "9":
                 # Exit
                 print("\n👋 Goodbye!")
                 bot.stop()
