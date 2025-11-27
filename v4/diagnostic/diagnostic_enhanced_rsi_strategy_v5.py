@@ -1,31 +1,36 @@
 """
-Enhanced strategy with comprehensive diagnostic capabilities - V5
-Updated to work with the enhanced V5 strategy with all improvements
+Diagnostic Enhanced RSI Strategy V5
+Implements comprehensive diagnostic logging for the enhanced strategy
 """
 
 import pandas as pd
 import numpy as np
 from typing import Dict, Any, List, Optional, Tuple
+import logging
+from datetime import datetime
+
 from strategies.enhanced_rsi_strategy_v5 import EnhancedRsiStrategyV5, PositionType
 from diagnostic.diagnostic_system import DiagnosticSystem
-import logging
 
 logger = logging.getLogger(__name__)
 
-class DiagnosticEnhancedRsiStrategy(EnhancedRsiStrategyV5):  # Updated to inherit from V5
-    """Enhanced RSI Strategy V5 with comprehensive diagnostic logging"""
+class DiagnosticEnhancedRsiStrategyV5(EnhancedRsiStrategyV5):
+    """Enhanced RSI Strategy V5 with comprehensive diagnostic capabilities"""
 
     def __init__(self, diagnostic_system: DiagnosticSystem = None, *args, **kwargs):
-        super().__init__(*args, **kwargs)  # This now calls V5's __init__ which includes all enhancements
+        super().__init__(*args, **kwargs)
         self.diagnostic_system = diagnostic_system or DiagnosticSystem()
         self._additional_metrics = {}
+        
+        # Enhanced logging for diagnostics
+        logger.info("🔍 Diagnostic Enhanced RSI Strategy V5 initialized with comprehensive logging")
 
     def generate_signal_with_diagnostics(self, data: pd.DataFrame, current_index: int) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-        """Generate signal and return both signal and diagnostic data - V5 enhanced"""
-        # Call parent method to get the signal (now uses V5 logic)
+        """Generate signal and return both signal and diagnostic data"""
+        # Call parent method to get the signal
         signal = self.generate_signal(data, current_index)
 
-        # Prepare enhanced diagnostic data
+        # Prepare comprehensive diagnostic data
         diagnostic_data = {}
 
         # Capture current market conditions and indicators
@@ -43,7 +48,7 @@ class DiagnosticEnhancedRsiStrategy(EnhancedRsiStrategyV5):  # Updated to inheri
                 'macd': float(current_row['MACD']) if 'MACD' in current_row else 0,
             }
 
-        # Add enhanced signal-specific diagnostic information
+        # Add signal-specific diagnostic information
         diagnostic_data.update({
             'signal_action': signal.get('action', 'HOLD'),
             'signal_reason': signal.get('reason', ''),
@@ -54,23 +59,23 @@ class DiagnosticEnhancedRsiStrategy(EnhancedRsiStrategyV5):  # Updated to inheri
             'consecutive_losses': self._consecutive_losses,
             'current_regime': self._current_regime,
             'contradiction_score': self._contradiction_report.get('contradiction_score', 0.0) if hasattr(self, '_contradiction_report') else 0.0,
-            'enhanced_indicators_available': True
+            'regime_details': getattr(self, 'regime_details', {})
         })
 
         return signal, diagnostic_data
 
     def check_entry_conditions(self, data: pd.DataFrame, position_type: PositionType) -> Tuple[bool, List[str]]:
         """Enhanced entry conditions with detailed diagnostic logging - V5 with all improvements"""
-        # This now uses the enhanced V5 implementation which includes:
-        # - Advanced trend filter
-        # - Enhanced MTF analysis
-        # - Contradiction detection
-        # - Regime-based adjustments
-        # So we can just call the parent method and add diagnostic info
-        result, conditions = super().check_entry_conditions(data, position_type)
-
-        # Add additional diagnostic details specific to V5 enhancements
+        conditions = []
         try:
+            # Store original behavior but capture more details
+            result, cond_list = super().check_entry_conditions(data, position_type)
+
+            # Store conditions for later diagnostic
+            self._last_entry_conditions = cond_list
+            conditions.extend(cond_list)
+
+            # Additional diagnostic details
             if 'RSI' in data.columns:
                 current_rsi = float(data['RSI'].iloc[-1])
                 if position_type == PositionType.LONG:
@@ -78,28 +83,25 @@ class DiagnosticEnhancedRsiStrategy(EnhancedRsiStrategyV5):  # Updated to inheri
                 else:
                     conditions.append(f"RSI: {current_rsi:.2f} (threshold: {self.rsi_overbought - self.rsi_entry_buffer:.2f})")
 
-            # Enhanced trend analysis using the new trend filter
-            if self.trend_filter:
-                try:
-                    trend_ok, trend_desc, trend_conf = self.trend_filter.evaluate(data, position_type.value)
-                    conditions.append(f"Trend Filter: {trend_desc} (conf: {trend_conf:.2f})")
-                except Exception:
-                    conditions.append("Trend Filter: Error evaluating trend")
+            # Enhanced trend analysis with multiple indicators
+            if 'EMA_21' in data.columns and 'EMA_50' in data.columns:
+                ema21 = float(data['EMA_21'].iloc[-1])
+                ema50 = float(data['EMA_50'].iloc[-1])
 
-            # Enhanced MTF analysis
-            if self.mtf_analyzer:
-                try:
-                    mtf_result = self.mtf_analyzer.analyze_alignment(data, position_type.value)
-                    conditions.append(f"MTF Analysis: {mtf_result['messages'][-1] if mtf_result['messages'] else 'Error'}")
-                except Exception:
-                    conditions.append("MTF Analysis: Error evaluating MTF")
+                if position_type == PositionType.LONG:
+                    trend_ok = ema21 >= ema50
+                    conditions.append(f"Trend EMA21/E50: {'OK' if trend_ok else 'FAIL'} (EMA21:{ema21:.4f} vs EMA50:{ema50:.4f})")
+                else:
+                    trend_ok = ema21 <= ema50
+                    conditions.append(f"Trend EMA21/E50: {'OK' if trend_ok else 'FAIL'} (EMA21:{ema21:.4f} vs EMA50:{ema50:.4f})")
 
-            # Contradiction information
+            # Distance from last trade
+            candles_since_last = len(data) - 1 - self._last_trade_index
+            conditions.append(f"Gap: {candles_since_last}/{self.min_candles_between} candles")
+
+            # Add contradiction information
             contradiction_score = getattr(self, '_contradiction_report', {}).get('contradiction_score', 0.0)
             conditions.append(f"Contradictions: {contradiction_score:.3f}")
-
-            # Regime information
-            conditions.append(f"Market Regime: {self._current_regime}")
 
             return result, conditions
 
@@ -113,7 +115,7 @@ class DiagnosticEnhancedRsiStrategy(EnhancedRsiStrategyV5):  # Updated to inheri
             exit_signal = super().check_exit_conditions(data, current_index)
 
             if exit_signal and self._current_trade:
-                # Add enhanced diagnostic info to exit signal using V5 trade structure
+                # Add diagnostic info to exit signal
                 current_price = data['close'].iloc[-1]
                 entry_price = self._current_trade.entry_price
                 quantity = self._current_trade.quantity
@@ -145,3 +147,26 @@ class DiagnosticEnhancedRsiStrategy(EnhancedRsiStrategyV5):  # Updated to inheri
         except Exception as e:
             logger.error(f"Error in enhanced exit conditions V5: {e}")
             return None
+
+    def get_performance_metrics(self) -> Dict[str, Any]:
+        """Get enhanced performance metrics with diagnostic information"""
+        base_metrics = super().get_performance_metrics()
+        
+        # Add diagnostic-specific metrics
+        diagnostic_metrics = {
+            'strategy_version': 'V5_DIAGNOSTIC',
+            'total_contradictions_analyzed': len(self._trade_history),  # As each trade stores contradiction info
+            'avg_contradiction_at_entry': base_metrics.get('avg_contradiction_score', 0),
+            'enhanced_analysis_available': True,
+            'module_integration_status': {
+                'mtf_analyzer': self.mtf_analyzer is not None,
+                'trend_filter': self.trend_filter is not None,
+                'regime_detector': self.regime_detector is not None,
+                'risk_manager': self.risk_manager is not None,
+                'contradiction_detector': self.contradiction_detector is not None
+            }
+        }
+        
+        # Merge base and diagnostic metrics
+        base_metrics.update(diagnostic_metrics)
+        return base_metrics

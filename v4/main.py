@@ -21,11 +21,11 @@ warnings.filterwarnings('ignore')
 # Import project modules
 from utils.logger import setup_logger, get_trade_logger, get_performance_logger, get_mongo_collection
 from data.data_fetcher import DataFetcher
-from strategies.enhanced_rsi_strategy_v4 import EnhancedRsiStrategyV4, PositionType
+from strategies.enhanced_rsi_strategy_v5 import EnhancedRsiStrategyV5, PositionType
 from strategies.ensemble_strategy_v4 import EnsembleRsiStrategyV4
 from diagnostic.diagnostic_enhanced_rsi_strategy import DiagnosticEnhancedRsiStrategy
-from backtest.enhanced_rsi_backtest_v4 import EnhancedRSIBacktestV4
-from config.parameters import OPTIMIZED_PARAMS_V4, MARKET_CONDITION_PARAMS, get_best_params_for_timeframe
+from backtest.enhanced_rsi_backtest_v5 import EnhancedRSIBacktestV5
+from config.parameters import OPTIMIZED_PARAMS_V4, OPTIMIZED_PARAMS_V5, MARKET_CONDITION_PARAMS, get_best_params_for_timeframe
 from config.market_config import SYMBOL_MAPPING, TIMEFRAME_MAPPING, DEFAULT_CONFIG
 
 class TradingBotV4:
@@ -82,8 +82,8 @@ class TradingBotV4:
     def _filter_strategy_params(self, strategy_params: Dict[str, Any]) -> Dict[str, Any]:
         """Filter out parameters that don't exist in the selected strategy class."""
         try:
-            cls_name = (strategy_params or {}).get('strategy_class', 'EnhancedRsiStrategyV4')
-            target_cls = EnhancedRsiStrategyV4
+            cls_name = (strategy_params or {}).get('strategy_class', 'EnhancedRsiStrategyV5')
+            target_cls = EnhancedRsiStrategyV5
             if cls_name == 'EnsembleRsiStrategyV4':
                 target_cls = EnsembleRsiStrategyV4
             elif cls_name == 'DiagnosticEnhancedRsiStrategy':
@@ -122,7 +122,7 @@ class TradingBotV4:
         elif tf == 'H1':
             return 'ENHANCED_INTRADAY_H1'
         elif tf == 'H4':
-            return 'OPTIMIZED_PARAMS_V4'
+            return 'OPTIMIZED_PARAMS_V5'
         else:
             return 'CONSERVATIVE_PARAMS'
 
@@ -150,8 +150,8 @@ class TradingBotV4:
                     self.strategy = EnsembleRsiStrategyV4(**filtered_params)
                     self.logger.info("✅ Ensemble RSI Strategy V4 initialized")
                 else:
-                    self.strategy = EnhancedRsiStrategyV4(**filtered_params)
-                    self.logger.info("✅ RSI Strategy Version 4 initialized")
+                    self.strategy = EnhancedRsiStrategyV5(**filtered_params)
+                    self.logger.info("✅ RSI Strategy Version 5 initialized")
 
             # Common param logging if available
             rsi_period = filtered_params.get('rsi_period')
@@ -181,8 +181,8 @@ class TradingBotV4:
             if backtest_params:
                 backtest_config.update(backtest_params)
             
-            self.backtest_engine = EnhancedRSIBacktestV4(**backtest_config)
-            self.logger.info("✅ Backtest engine initialized")
+            self.backtest_engine = EnhancedRSIBacktestV5(**backtest_config)
+            self.logger.info("✅ Backtest engine V5 initialized with all diagnostic enhancements")
             
             return True
             
@@ -266,14 +266,14 @@ class TradingBotV4:
                 try:
                     strategy_params = get_best_params_for_timeframe(timeframe)
                     profile_name = self._infer_profile_name_from_timeframe(timeframe)
-                    self.logger.info(f"🧭 Auto-selected profile for {timeframe}: {profile_name} | strategy_class={strategy_params.get('strategy_class','EnhancedRsiStrategyV4')}")
+                    self.logger.info(f"🧭 Auto-selected profile for {timeframe}: {profile_name} | strategy_class={strategy_params.get('strategy_class','EnhancedRsiStrategyV5')}")
                 except Exception as e:
                     self.logger.warning(f"Param auto-selection failed, falling back to defaults: {e}")
-                    strategy_params = OPTIMIZED_PARAMS_V4
+                    strategy_params = OPTIMIZED_PARAMS_V5
 
             # Initialize strategy with diagnostic support if requested
             if use_diagnostic:
-                strategy_params = strategy_params or OPTIMIZED_PARAMS_V4
+                strategy_params = strategy_params or OPTIMIZED_PARAMS_V5
                 # Force diagnostic strategy if requested
                 strategy_params = strategy_params.copy()
                 strategy_params['strategy_class'] = 'DiagnosticEnhancedRsiStrategy'
@@ -775,12 +775,12 @@ class TradingBotV4:
             strategies: Dict[str, Any] = {}
             for sym in symbols:
                 params = dict(base_params)  # copy
-                cls_name = params.get('strategy_class', 'EnhancedRsiStrategyV4')
+                cls_name = params.get('strategy_class', 'EnhancedRsiStrategyV5')
                 filtered = self._filter_strategy_params(params)
                 if cls_name == 'EnsembleRsiStrategyV4':
                     strategies[sym] = EnsembleRsiStrategyV4(**filtered)
                 else:
-                    strategies[sym] = EnhancedRsiStrategyV4(**filtered)
+                    strategies[sym] = EnhancedRsiStrategyV5(**filtered)
                 self.logger.info(f"✅ Strategy initialized for {sym} | {cls_name}")
 
             # Init live log collections

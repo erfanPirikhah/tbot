@@ -1,32 +1,32 @@
 # config/parameters.py - OPTIMIZED VERSION
 
-# 🔥 پارامترهای بهینه‌شده برای سودآوری بالاتر
-OPTIMIZED_PARAMS_V4 = {
-    # Core RSI - بهینه‌شده
+# 🔥 پارامترهای بهینه‌شده برای سودآوری بالاتر - V5 با بهبودهای کامل
+OPTIMIZED_PARAMS_V5 = {
+    # Core RSI - بهبود یافته برای نرخ موفقیت بالاتر
     'rsi_period': 14,  # استاندارد و قابل اعتماد
-    'rsi_oversold': 35,  # تعادل بین حساسیت و دقت
-    'rsi_overbought': 65,
-    'rsi_entry_buffer': 5,  # انعطاف بیشتر برای ورود
-    
-    # Risk Management - واقع‌گرایانه
+    'rsi_oversold': 30,  # کاهش یافت تا فرصت‌های بیشتری ایجاد شود
+    'rsi_overbought': 70,  # افزایش یافت تا فرصت‌های بیشتری ایجاد شود
+    'rsi_entry_buffer': 3,  # کاهش یافت برای ورودهای دقیق‌تر
+
+    # Risk Management - پویا و تطبیقی
     'risk_per_trade': 0.015,  # 1.5% - متعادل
     'stop_loss_atr_multiplier': 2.0,  # فاصله کافی برای تنفس
     'take_profit_ratio': 2.5,  # هدف سود 5% (2.5 * 2% SL)
     'min_position_size': 100,  # قابل دسترس برای حساب‌های کوچک
-    'max_position_size_ratio': 0.3,  # حداکثر 30% از سرمایه
-    
+    'max_position_size_ratio': 0.4,  # افزایش یافت تا در شرایط مساعد بیشتر از سرمایه استفاده شود
+
     # Trade Control - منطقی
     'max_trades_per_100': 30,  # فرصت‌های بیشتر
     'min_candles_between': 5,  # فاصله منطقی
     'max_trade_duration': 100,  # زمان کافی برای رشد
-    
-    # Filters - غیرفعال برای انعطاف بیشتر
-    'enable_trend_filter': False,  # 🔥 غیرفعال
-    'trend_strength_threshold': 0.005,
+
+    # Filters - فعال برای بهبود دقت
+    'enable_trend_filter': True,  # 🔥 فعال شد - استفاده از فیلتر روند بهبود یافته
+    'trend_strength_threshold': 0.4,  # آستانه مناسب برای تشخیص روند
     'enable_volume_filter': False,
-    'enable_volatility_filter': False,  # 🔥 غیرفعال
+    'enable_volatility_filter': True,  # 🔥 فعال شد - فیلتر نوسان
     'enable_short_trades': True,  # سود از هر دو جهت
-    
+
     # Advanced - بهبود یافته
     'enable_trailing_stop': True,
     'trailing_activation_percent': 1.0,  # 🔥 فعال می‌شود در 1% سود
@@ -34,25 +34,25 @@ OPTIMIZED_PARAMS_V4 = {
     'enable_partial_exit': True,
     'partial_exit_ratio': 0.5,  # 50% خروج جزئی
     'partial_exit_threshold': 1.5,  # 🔥 در 1.5% سود
-    
+
     # Loss Control - متعادل
     'max_consecutive_losses': 4,  # تحمل بیشتر
     'pause_after_losses': 10,  # وقفه کوتاه‌تر
-    'risk_reduction_after_loss': False,  # 🔥 غیرفعال - حفظ ریسک ثابت
-    
+    'risk_reduction_after_loss': False,  # ثابت ماندن ریسک
+
     # Confirmations - ساده
-    'require_rsi_confirmation': False,  # 🔥 غیرفعال
-    'require_price_confirmation': False,  # 🔥 غیرفعال
+    'require_rsi_confirmation': False,
+    'require_price_confirmation': False,
     'confirmation_candles': 1,
 
-    # Multi-Timeframe Analysis (MTF) - تایید HTF برای دقت بالاتر
+    # Multi-Timeframe Analysis (MTF) - بهبود یافته
     'enable_mtf': True,
-    'mtf_timeframes': ['H4', 'D1'],   # تایم‌فریم‌های تاییدی
-    'mtf_require_all': True,          # همه تایم‌فریم‌ها باید همسو باشند
-    'mtf_long_rsi_min': 50.0,         # حداقل RSI در HTF برای LONG
-    'mtf_short_rsi_max': 50.0,        # حداکثر RSI در HTF برای SHORT
-    'mtf_trend_ema_fast': 21,         # EMA سریع تایم‌فریم بالاتر
-    'mtf_trend_ema_slow': 50,         # EMA کند تایم‌فریم بالاتر
+    'mtf_timeframes': ['H4', 'D1', 'H1'],   # افزایش تایم‌فریم‌ها
+    'mtf_require_all': False,          # 🔥 تغییر: فقط تعدادی از تایم‌فریم‌ها نیاز به همسو بودن دارند
+    'mtf_long_rsi_min': 40.0,          # 🔥 کاهش یافت - انعطاف‌پذیری بیشتر
+    'mtf_short_rsi_max': 60.0,         # 🔥 افزایش یافت - انعطاف‌پذیری بیشتر
+    'mtf_trend_ema_fast': 21,          # EMA سریع تایم‌فریم بالاتر
+    'mtf_trend_ema_slow': 50,          # EMA کند تایم‌فریم بالاتر
 
     # Advanced Filters (new addition)
     'enable_advanced_filters': True,  # Enable advanced market regime and condition filters
@@ -60,8 +60,11 @@ OPTIMIZED_PARAMS_V4 = {
     'market_strength_min_score': 3.0,  # Minimum market strength score (0-10)
     'support_resistance_check': True,  # Check price against support/resistance levels
     'divergence_check': True,  # Check for RSI-price divergence
-    'volatility_band_check': True,  # Check price position in volatility bands  
+    'volatility_band_check': True,  # Check price position in volatility bands
 }
+
+# Legacy mapping for backward compatibility
+OPTIMIZED_PARAMS_V4 = OPTIMIZED_PARAMS_V5.copy()
 
 # 🔥 پارامترهای محافظه‌کارانه (برای حساب‌های بزرگ)
 CONSERVATIVE_PARAMS = {
@@ -405,7 +408,7 @@ def get_best_params_for_timeframe(timeframe: str) -> dict:
     elif tf == 'H1':
         return ENHANCED_INTRADAY_H1.copy()
     elif tf == 'H4':
-        return OPTIMIZED_PARAMS_V4.copy()
+        return OPTIMIZED_PARAMS_V5.copy()  # Updated to use V5
     else:  # D1, W1
         return CONSERVATIVE_PARAMS.copy()
 
