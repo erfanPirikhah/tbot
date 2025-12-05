@@ -83,9 +83,21 @@ class TradingBotV4:
         """Filter out parameters that don't exist in the selected strategy class."""
         try:
             cls_name = (strategy_params or {}).get('strategy_class', 'EnhancedRsiStrategyV5')
+
+            # Determine target class, defaulting to V5 if EnsembleRsiStrategyV4 is not available
             target_cls = EnhancedRsiStrategyV5
             if cls_name == 'EnsembleRsiStrategyV4':
-                target_cls = EnsembleRsiStrategyV4
+                try:
+                    # Try to import, but gracefully fall back to V5 if not available
+                    from strategies import EnsembleRsiStrategyV4
+                    target_cls = EnsembleRsiStrategyV4
+                except ImportError:
+                    self.logger.warning("EnsembleRsiStrategyV4 not available, using V5 instead")
+                    target_cls = EnhancedRsiStrategyV5
+                    # Update strategy class to V5
+                    if 'strategy_class' in strategy_params:
+                        strategy_params = strategy_params.copy()
+                        strategy_params['strategy_class'] = 'EnhancedRsiStrategyV5'
             elif cls_name == 'DiagnosticEnhancedRsiStrategy':
                 target_cls = DiagnosticEnhancedRsiStrategy
 
@@ -168,8 +180,15 @@ class TradingBotV4:
                     })
 
                 if cls_name == 'EnsembleRsiStrategyV4':
-                    self.strategy = EnsembleRsiStrategyV4(**filtered_params)
-                    self.logger.info("✅ Ensemble RSI Strategy V4 initialized")
+                    try:
+                        # Try to import it, fall back to V5 if not available
+                        from strategies import EnsembleRsiStrategyV4
+                        self.strategy = EnsembleRsiStrategyV4(**filtered_params)
+                        self.logger.info("✅ Ensemble RSI Strategy V4 initialized")
+                    except ImportError:
+                        self.logger.warning("EnsembleRsiStrategyV4 not available, using V5 instead")
+                        self.strategy = EnhancedRsiStrategyV5(**filtered_params)
+                        self.logger.info(f"✅ RSI Strategy Version 5 initialized (fallback from V4, TestMode: {self.test_mode})")
                 else:
                     self.strategy = EnhancedRsiStrategyV5(**filtered_params)
                     self.logger.info(f"✅ RSI Strategy Version 5 initialized (TestMode: {self.test_mode})")
@@ -868,7 +887,13 @@ class TradingBotV4:
 
                 filtered = self._filter_strategy_params(params)
                 if cls_name == 'EnsembleRsiStrategyV4':
-                    strategies[sym] = EnsembleRsiStrategyV4(**filtered)
+                    try:
+                        # Try to import it, but gracefully fall back to V5 if not available
+                        from strategies import EnsembleRsiStrategyV4
+                        strategies[sym] = EnsembleRsiStrategyV4(**filtered)
+                    except ImportError:
+                        self.logger.warning(f"EnsembleRsiStrategyV4 not available for {sym}, using V5 instead")
+                        strategies[sym] = EnhancedRsiStrategyV5(**filtered)
                 else:
                     strategies[sym] = EnhancedRsiStrategyV5(**filtered)
                 self.logger.info(f"✅ Strategy initialized for {sym} | {cls_name} (TestMode: {test_mode})")
