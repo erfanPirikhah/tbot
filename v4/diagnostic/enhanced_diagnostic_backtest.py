@@ -7,14 +7,14 @@ import numpy as np
 import logging
 from datetime import datetime
 from typing import Dict, List, Any, Optional
-from backtest.enhanced_rsi_backtest_v4 import EnhancedRSIBacktestV4
+from backtest.enhanced_rsi_backtest_v4 import EnhancedRSIBacktestV5
 from diagnostic.diagnostic_system import DiagnosticSystem
 from diagnostic.diagnostic_enhanced_rsi_strategy import DiagnosticEnhancedRsiStrategy
 from config.parameters import OPTIMIZED_PARAMS_V4
 
 logger = logging.getLogger(__name__)
 
-class EnhancedDiagnosticBacktest(EnhancedRSIBacktestV4):
+class EnhancedDiagnosticBacktest(EnhancedRSIBacktestV5):
     """Enhanced backtest with comprehensive diagnostic logging for every decision"""
     
     def __init__(self, 

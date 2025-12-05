@@ -21,9 +21,9 @@ def test_advanced_filters_integration():
         from strategies.advanced_filters import AdvancedMarketFilters
         print("[OK] AdvancedMarketFilters import successful")
         
-        # Test 2: Import EnhancedRsiStrategyV4 with AdvancedMarketFilters
-        from strategies.enhanced_rsi_strategy_v4 import EnhancedRsiStrategyV4
-        print("[OK] EnhancedRsiStrategyV4 import successful")
+        # Test 2: Import EnhancedRsiStrategyV5 with AdvancedMarketFilters
+        from strategies.enhanced_rsi_strategy_v5 import EnhancedRsiStrategyV5
+        print("[OK] EnhancedRsiStrategyV5 import successful")
         
         # Test 3: Import EnsembleStrategyV4 with AdvancedMarketFilters
         from strategies.ensemble_strategy_v4 import EnsembleRsiStrategyV4
@@ -44,13 +44,13 @@ def test_advanced_filters_integration():
         sample_data.index = pd.date_range(start='2023-01-01', periods=50, freq='H')
         print("[OK] Sample data created")
         
-        # Test 5: Test EnhancedRsiStrategyV4 with advanced filters
-        enhanced_strategy = EnhancedRsiStrategyV4(
+        # Test 5: Test EnhancedRsiStrategyV5 with advanced filters
+        enhanced_strategy = EnhancedRsiStrategyV5(
             enable_advanced_filters=True,
             advanced_filter_confidence_threshold=0.6,
             market_strength_min_score=3.0
         )
-        print("[OK] EnhancedRsiStrategyV4 with advanced filters initialized")
+        print("[OK] EnhancedRsiStrategyV5 with advanced filters initialized")
         
         # Test 6: Test EnsembleStrategyV4 with advanced filters
         ensemble_strategy = EnsembleRsiStrategyV4(
@@ -71,7 +71,7 @@ def test_advanced_filters_integration():
         print(f"[OK] Support/Resistance levels: Support={support:.2f}, Resistance={resistance:.2f}")
         
         # Test 8: Test filter evaluation methods
-        from strategies.enhanced_rsi_strategy_v4 import PositionType
+        from strategies.enhanced_rsi_strategy_v5 import PositionType
         eval_result = enhanced_strategy._evaluate_advanced_filters(sample_data, PositionType.LONG)
         print(f"[OK] Enhanced strategy filter evaluation: {eval_result[0]} - {len(eval_result[1])} conditions")
         

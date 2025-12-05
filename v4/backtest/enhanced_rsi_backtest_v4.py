@@ -19,7 +19,7 @@ import traceback
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from data.mt5_data import mt5_fetcher, MT5_AVAILABLE
-from strategies.enhanced_rsi_strategy_v4 import EnhancedRsiStrategyV4, PositionType
+from strategies.enhanced_rsi_strategy_v5 import EnhancedRsiStrategyV5, PositionType
 from config.parameters import OPTIMIZED_PARAMS_V4
 from config.market_config import SYMBOL_MAPPING, TIMEFRAME_MAPPING, DEFAULT_CONFIG
 from utils.logger import get_mongo_collection
@@ -30,7 +30,7 @@ warnings.filterwarnings('ignore')
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-class EnhancedRSIBacktestV4:
+class EnhancedRSIBacktestV5:
     """سیستم بکتست نسخه ۴ با تحلیل‌های پیشرفته"""
     
     def __init__(
@@ -390,17 +390,17 @@ class EnhancedRSIBacktestV4:
                     if strategy_class_name == 'EnsembleRsiStrategyV4':
                         from strategies.ensemble_strategy_v4 import EnsembleRsiStrategyV4
                         strategy = EnsembleRsiStrategyV4(**strategy_params)
-                    elif strategy_class_name == 'EnhancedRsiStrategyV4':
-                        strategy = EnhancedRsiStrategyV4(**strategy_params)
+                    elif strategy_class_name == 'EnhancedRsiStrategyV5':
+                        strategy = EnhancedRsiStrategyV5(**strategy_params)
                     else:
                         # در صورت نامعتبر بودن، به نسخه پیش‌فرض برمی‌گردیم
-                        logger.warning(f"Strategy class '{strategy_class_name}' not recognized. Falling back to EnhancedRsiStrategyV4.")
-                        strategy = EnhancedRsiStrategyV4(**strategy_params)
+                        logger.warning(f"Strategy class '{strategy_class_name}' not recognized. Falling back to EnhancedRsiStrategyV5.")
+                        strategy = EnhancedRsiStrategyV5(**strategy_params)
                 else:
-                    strategy = EnhancedRsiStrategyV4(**strategy_params)
+                    strategy = EnhancedRsiStrategyV5(**strategy_params)
             except Exception as ie:
-                logger.warning(f"Falling back to EnhancedRsiStrategyV4 due to error loading '{strategy_class_name}': {ie}")
-                strategy = EnhancedRsiStrategyV4(**strategy_params)
+                logger.warning(f"Falling back to EnhancedRsiStrategyV5 due to error loading '{strategy_class_name}': {ie}")
+                strategy = EnhancedRsiStrategyV5(**strategy_params)
 
             # ضمیمه‌کردن ویژگی‌های MTF در صورت فعال‌بودن
             try:
@@ -900,10 +900,10 @@ class EnhancedRSIBacktestV4:
         metrics = self.results.get('performance_metrics', {})
         strategy_metrics = self.results.get('strategy_metrics', {})
         data_info = self.results.get('data_info', {})
-        strategy_name = self.results.get('strategy_name', 'EnhancedRsiStrategyV4')
+        strategy_name = self.results.get('strategy_name', 'EnhancedRsiStrategyV5')
         if strategy_name == 'EnsembleRsiStrategyV4':
             strategy_title = 'ENSEMBLE RSI STRATEGY V4'
-        elif strategy_name == 'EnhancedRsiStrategyV4':
+        elif strategy_name == 'EnhancedRsiStrategyV5':
             strategy_title = 'ENHANCED RSI STRATEGY V4'
         else:
             strategy_title = strategy_name.upper()
@@ -984,11 +984,11 @@ class EnhancedRSIBacktestV4:
 
             for i, combo in enumerate(combinations):
                 params = dict(zip(keys, combo))
-                strategy_class_name = params.get('strategy_class', 'EnhancedRsiStrategyV4')
+                strategy_class_name = params.get('strategy_class', 'EnhancedRsiStrategyV5')
 
                 try:
                     # Select and instantiate the correct strategy class with signature-based filtering
-                    target_cls = EnhancedRsiStrategyV4
+                    target_cls = EnhancedRsiStrategyV5
                     if strategy_class_name == 'EnsembleRsiStrategyV4':
                         from strategies.ensemble_strategy_v4 import EnsembleRsiStrategyV4
                         target_cls = EnsembleRsiStrategyV4

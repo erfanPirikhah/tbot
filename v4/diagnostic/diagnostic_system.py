@@ -14,9 +14,9 @@ from enum import Enum
 import uuid
 
 from utils.logger import get_mongo_collection
-from strategies.enhanced_rsi_strategy_v4 import EnhancedRsiStrategyV4
-from backtest.enhanced_rsi_backtest_v4 import EnhancedRSIBacktestV4
-from config.parameters import OPTIMIZED_PARAMS_V4
+from strategies.enhanced_rsi_strategy_v5 import EnhancedRsiStrategyV5, PositionType
+from backtest.enhanced_rsi_backtest_v5 import EnhancedRSIBacktestV5
+from config.parameters import OPTIMIZED_PARAMS_V5
 
 logger = logging.getLogger(__name__)
 
@@ -538,7 +538,7 @@ class DiagnosticSystem:
             self.logger.info(f"🚀 Starting comprehensive diagnostic for {symbol} ({timeframe})")
 
             # Setup backtest engine and strategy
-            backtest_engine = EnhancedRSIBacktestV4()
+            backtest_engine = EnhancedRSIBacktestV5()
             strategy_params = strategy_params or OPTIMIZED_PARAMS_V4
 
             # Fetch data
@@ -553,7 +553,7 @@ class DiagnosticSystem:
                 data = backtest_engine._calculate_technical_indicators(data)
             
             # Initialize strategy
-            strategy = EnhancedRsiStrategyV4(**strategy_params)
+            strategy = EnhancedRsiStrategyV5(**strategy_params)
             
             # Set symbol and timeframe in strategy for logging
             strategy._current_symbol = symbol

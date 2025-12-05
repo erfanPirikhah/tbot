@@ -22,7 +22,6 @@ warnings.filterwarnings('ignore')
 from utils.logger import setup_logger, get_trade_logger, get_performance_logger, get_mongo_collection
 from data.data_fetcher import DataFetcher
 from strategies.enhanced_rsi_strategy_v5 import EnhancedRsiStrategyV5, PositionType
-from strategies.ensemble_strategy_v4 import EnsembleRsiStrategyV4
 from diagnostic.diagnostic_enhanced_rsi_strategy import DiagnosticEnhancedRsiStrategy
 from backtest.enhanced_rsi_backtest_v5 import EnhancedRSIBacktestV5
 from config.parameters import OPTIMIZED_PARAMS_V4, OPTIMIZED_PARAMS_V5, MARKET_CONDITION_PARAMS, get_best_params_for_timeframe
@@ -133,7 +132,7 @@ class TradingBotV4:
             if strategy_params is None:
                 strategy_params = OPTIMIZED_PARAMS_V4
 
-            cls_name = (strategy_params or {}).get('strategy_class', 'EnhancedRsiStrategyV4')
+            cls_name = (strategy_params or {}).get('strategy_class', 'EnhancedRsiStrategyV5')
 
             # If specifically told to use diagnostic or if the class name requires it
             if use_diagnostic or cls_name == 'DiagnosticEnhancedRsiStrategy':
