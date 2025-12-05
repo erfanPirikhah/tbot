@@ -1,0 +1,13 @@
+commission: 0.0003
+data_source: simulated
+days_back: 30
+initial_capital: 10000.0
+params_used: CONSERVATIVE_PARAMS
+slippage: 0.0001
+symbols:
+- BTCUSDT
+- ETHUSDT
+timeframes:
+- H1
+- H4
+timestamp: '20251205_112940'

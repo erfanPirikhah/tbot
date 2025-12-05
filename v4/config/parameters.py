@@ -412,6 +412,22 @@ def get_best_params_for_timeframe(timeframe: str) -> dict:
     else:  # D1, W1
         return CONSERVATIVE_PARAMS.copy()
 
+# Test Mode Configuration
+TEST_MODE_CONFIG = {
+    # When TestMode is enabled, these filters are relaxed
+    'test_mode_enabled': False,  # Main toggle for test mode
+    'bypass_contradiction_detection': True,
+    'relax_risk_filters': True,
+    'relax_entry_conditions': True,
+    'enable_all_signals': True,
+    'max_trades_per_100': 100,  # Higher limit in test mode
+    'min_candles_between': 2,  # Less spacing in test mode
+    'rsi_entry_buffer': 5,  # Looser RSI entry buffer
+    'rsi_oversold': 35,  # More conservative oversold
+    'rsi_overbought': 65,  # More conservative overbought
+    'enable_short_trades': True,  # Enable short trades in test
+}
+
 # 🎯 انتخاب خودکار بر اساس سرمایه
 def get_params_for_capital(capital: float) -> dict:
     """

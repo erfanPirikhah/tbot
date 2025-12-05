@@ -188,36 +188,94 @@ class EnhancedMTFModule:
     Main MTF Module that integrates with the strategy
     Provides both analysis and integration capabilities
     """
-    
-    def __init__(self, 
+
+    def __init__(self,
                  mtf_timeframes: List[str] = None,
-                 mtf_long_rsi_min: float = 40.0,
-                 mtf_short_rsi_max: float = 60.0):
+                 mtf_long_rsi_min: float = 35.0,  # Made more permissive from 40
+                 mtf_short_rsi_max: float = 65.0,  # Made more permissive from 60
+                 mtf_require_all: bool = False,   # Changed from requiring all to majority alignment
+                 test_mode_enabled: bool = False):
         """
         Initialize the Enhanced MTF Module
         """
         self.mtf_timeframes = mtf_timeframes or ['H4', 'D1', 'H1']
+        self.mtf_require_all = mtf_require_all  # Whether all timeframes must align or just majority
+        self.test_mode_enabled = test_mode_enabled
+        self.mtf_long_rsi_min = mtf_long_rsi_min
+        self.mtf_short_rsi_max = mtf_short_rsi_max
+
+        # In TestMode, be more permissive with the minimum alignment score
+        min_alignment_score = 0.2 if test_mode_enabled else 0.3
         self.analyzer = MTFAnalyzer(
             mtf_long_rsi_min=mtf_long_rsi_min,
             mtf_short_rsi_max=mtf_short_rsi_max,
-            min_alignment_score=0.3  # More flexible than requiring all timeframes
+            min_alignment_score=min_alignment_score  # More flexible: 20% alignment required in TestMode
         )
     
-    def analyze_alignment(self, 
-                         data: pd.DataFrame, 
+    def analyze_alignment(self,
+                         data: pd.DataFrame,
                          position_type: str) -> Dict[str, Any]:
         """
-        Comprehensive MTF alignment analysis
-        
+        Comprehensive MTF alignment analysis with adaptive permissiveness
+
         Args:
             data: Current market data with HTF indicators
             position_type: 'LONG' or 'SHORT'
-            
+
         Returns:
             Dictionary with detailed analysis results
         """
+
+        # Check if we have sufficient HTF indicators in the data
+        has_any_htf_data = False
+        for tf in self.mtf_timeframes:
+            rsi_col = f'RSI_{tf}'
+            ema_fast_col = f'EMA_21_{tf}'
+            ema_slow_col = f'EMA_50_{tf}'
+            trend_col = f'TrendDir_{tf}'
+
+            if (rsi_col in data.columns or
+                (ema_fast_col in data.columns and ema_slow_col in data.columns) or
+                trend_col in data.columns):
+                has_any_htf_data = True
+                break
+
+        # If no HTF data is available, return a result that won't block in TestMode
+        if not has_any_htf_data:
+            if self.test_mode_enabled:
+                return {
+                    'is_aligned': True,  # Don't block in TestMode if no HTF data
+                    'score': 0.5,
+                    'messages': ["No HTF data available - MTF analysis skipped (TestMode - allowing)"],
+                    'component_scores': {},
+                    'timeframes_analyzed': [],
+                    'position_type': position_type,
+                    'threshold': 0.0,
+                    'analysis_timestamp': pd.Timestamp.now()
+                }
+            else:
+                # In normal mode, if no HTF data available, be more lenient
+                return {
+                    'is_aligned': True,
+                    'score': 0.3,
+                    'messages': ["No HTF data available - MTF analysis skipped (normal mode - allowing)"],
+                    'component_scores': {},
+                    'timeframes_analyzed': [],
+                    'position_type': position_type,
+                    'threshold': 0.3,
+                    'analysis_timestamp': pd.Timestamp.now()
+                }
+
+        # Otherwise, run normal analysis
         is_aligned, messages, score, component_scores = self.analyzer.is_aligned(data, position_type)
-        
+
+        # In TestMode, be more permissive if alignment is marginal
+        if self.test_mode_enabled and not is_aligned:
+            # If score is reasonably close to the threshold, consider it aligned in TestMode
+            if score >= 0.15:  # More permissive threshold for TestMode
+                is_aligned = True
+                messages.append(f"MTF: Score {score:.2f} >= 0.15 (TestMode - overridden to allow)")
+
         return {
             'is_aligned': is_aligned,
             'score': score,

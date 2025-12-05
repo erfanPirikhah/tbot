@@ -144,6 +144,13 @@ class EnhancedRsiStrategyV5:
         support_resistance_check: bool = True,  # Check price against support/resistance levels
         divergence_check: bool = True,  # Check for RSI-price divergence
         volatility_band_check: bool = True,  # Check price position in volatility bands
+
+        # Test Mode - Added for Stage 1
+        test_mode_enabled: bool = False,
+        bypass_contradiction_detection: bool = False,
+        relax_risk_filters: bool = False,
+        relax_entry_conditions: bool = False,
+        enable_all_signals: bool = False,
     ):
         # Initialize all parameters
         self.rsi_period = rsi_period
@@ -203,6 +210,13 @@ class EnhancedRsiStrategyV5:
         self.support_resistance_check = support_resistance_check
         self.divergence_check = divergence_check
         self.volatility_band_check = volatility_band_check
+
+        # Test Mode parameters - Added for Stage 1
+        self.test_mode_enabled = test_mode_enabled
+        self.bypass_contradiction_detection = bypass_contradiction_detection
+        self.relax_risk_filters = relax_risk_filters
+        self.relax_entry_conditions = relax_entry_conditions
+        self.enable_all_signals = enable_all_signals
 
         # Initialize ENHANCED module instances
         self.mtf_analyzer = EnhancedMTFModule(
@@ -351,6 +365,61 @@ class EnhancedRsiStrategyV5:
             logger.error(f"Error in enhanced contradiction detection: {e}")
             return []  # Return empty list if error occurs
 
+    def _calculate_adaptive_rsi_thresholds(self, data: pd.DataFrame) -> Tuple[float, float]:
+        """
+        Calculate adaptive RSI thresholds based on market volatility and regime
+        """
+        # Calculate current market volatility
+        if len(data) < 14:
+            return self.rsi_oversold, self.rsi_overbought
+
+        # Use ATR-based volatility measure for RSI threshold adjustment
+        try:
+            close_prices = data['close']
+            # Calculate 20-period ATR to measure volatility
+            high_low = data['high'] - data['low']
+            high_close = abs(data['high'] - close_prices.shift())
+            low_close = abs(data['low'] - close_prices.shift())
+            true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+            atr = true_range.rolling(window=20).mean().iloc[-1]
+
+            # Calculate current price level relative to recent range
+            recent_high = data['high'].rolling(20).max().iloc[-1]
+            recent_low = data['low'].rolling(20).min().iloc[-1]
+            price_volatility = (recent_high - recent_low) / close_prices.iloc[-1] if close_prices.iloc[-1] != 0 else 0.01
+
+            # Calculate RSI volatility (how much RSI is fluctuating)
+            if 'RSI' in data.columns and len(data['RSI']) >= 10:
+                rsi_volatility = data['RSI'].tail(10).std()
+            else:
+                # Calculate RSI to determine volatility
+                temp_data = self._calculate_rsi(data.tail(10))
+                rsi_volatility = temp_data['RSI'].std() if 'RSI' in temp_data.columns else 0.1
+
+            # Adjust thresholds based on market conditions
+            if self.test_mode_enabled:
+                # In TestMode, make thresholds much more permissive
+                adaptive_oversold = max(10, self.rsi_oversold - 10)  # More oversold tolerance
+                adaptive_overbought = min(90, self.rsi_overbought + 10)  # More overbought tolerance
+            else:
+                # In normal mode, adjust based on volatility
+                volatility_factor = max(0.5, min(2.0, price_volatility / 0.01))  # Normalize to typical volatility
+
+                # In high volatility, widen the bands (make them less restrictive)
+                # In low volatility, narrow the bands (more sensitive)
+                adaptive_oversold = self.rsi_oversold - (5 * (volatility_factor - 1.0))
+                adaptive_overbought = self.rsi_overbought + (5 * (volatility_factor - 1.0))
+
+                # Ensure thresholds stay within reasonable bounds
+                adaptive_oversold = max(15, min(40, adaptive_oversold))
+                adaptive_overbought = max(60, min(85, adaptive_overbought))
+
+            return adaptive_oversold, adaptive_overbought
+
+        except Exception as e:
+            # If calculation fails, return original thresholds
+            return self.rsi_oversold, self.rsi_overbought
+
     def check_entry_conditions(self, data: pd.DataFrame, position_type: PositionType) -> Tuple[bool, List[str]]:
         """Enhanced entry conditions with comprehensive validation using integrated modules"""
         conditions = []
@@ -362,39 +431,88 @@ class EnhancedRsiStrategyV5:
 
             current_rsi = float(data['RSI'].iloc[-1]) if 'RSI' in data.columns else 50.0
 
-            # Basic RSI check
+            # Get adaptive thresholds based on market conditions
+            adaptive_oversold, adaptive_overbought = self._calculate_adaptive_rsi_thresholds(data)
+
+            # Basic RSI check with adaptive thresholds
+            rsi_threshold = None
             if position_type == PositionType.LONG:
-                rsi_ok = current_rsi <= (self.rsi_oversold + self.rsi_entry_buffer)
-                conditions.append(f"RSI: {current_rsi:.1f} ({'OK' if rsi_ok else 'FAIL'})")
-            else:
-                rsi_ok = current_rsi >= (self.rsi_overbought - self.rsi_entry_buffer)
-                conditions.append(f"RSI: {current_rsi:.1f} ({'OK' if rsi_ok else 'FAIL'})")
+                # For LONG: RSI should be below (adaptive_oversold + buffer)
+                rsi_threshold = adaptive_oversold + self.rsi_entry_buffer
+                rsi_ok = current_rsi <= rsi_threshold
+                conditions.append(f"RSI: {current_rsi:.1f} ≤ {rsi_threshold:.1f} (adaptive_oversold {adaptive_oversold:.1f} + buffer {self.rsi_entry_buffer}) ({'OK' if rsi_ok else 'FAIL'})")
+            else:  # SHORT
+                # For SHORT: RSI should be above (adaptive_overbought - buffer)
+                rsi_threshold = adaptive_overbought - self.rsi_entry_buffer
+                rsi_ok = current_rsi >= rsi_threshold
+                conditions.append(f"RSI: {current_rsi:.1f} ≥ {rsi_threshold:.1f} (adaptive_overbought {adaptive_overbought:.1f} - buffer {self.rsi_entry_buffer}) ({'OK' if rsi_ok else 'FAIL'})")
 
+            # In TestMode, be much more permissive with RSI conditions
             if not rsi_ok:
-                return False, [f"RSI not in entry zone for {position_type.value} ({current_rsi:.1f})"]
+                if self.test_mode_enabled:
+                    # In TestMode, if RSI is close to the threshold, allow it
+                    rsi_tolerance = 5.0  # Allow being 5 points away from ideal
+                    if position_type == PositionType.LONG:
+                        # For LONG, if RSI is within tolerance of oversold (even if above threshold)
+                        if current_rsi <= adaptive_oversold + self.rsi_entry_buffer + rsi_tolerance:
+                            rsi_ok = True
+                            conditions.append(f"RSI: {current_rsi:.1f} (TestMode bypass - close to threshold)")
+                    else:  # SHORT
+                        # For SHORT, if RSI is within tolerance of overbought (even if below threshold)
+                        if current_rsi >= adaptive_overbought - self.rsi_entry_buffer - rsi_tolerance:
+                            rsi_ok = True
+                            conditions.append(f"RSI: {current_rsi:.1f} (TestMode bypass - close to threshold)")
 
-            # Check for momentum confirmation
+                if not rsi_ok:
+                    return False, [f"RSI not in entry zone for {position_type.value} ({current_rsi:.1f}) - adaptive thresholds: {adaptive_oversold:.1f}/{adaptive_overbought:.1f}"]
+
+            # Check for momentum confirmation with more permissive thresholds
             momentum_ok = True
+            momentum_msg = ""
+
             if len(data) >= 3:
                 # Check if price is moving in the expected direction
                 if position_type == PositionType.LONG:
-                    # Expect recent momentum up (allow slight pullback)
+                    # For LONG, we want to see if there's potential for upward momentum despite recent pullback
                     recent_move = (data['close'].iloc[-1] - data['close'].iloc[-3]) / data['close'].iloc[-3]
-                    momentum_ok = recent_move > -0.002  # Allow slight pullback
-                else:
-                    # Expect recent momentum down
+                    # Be more permissive: allow slight pullbacks for long entries
+                    momentum_ok = recent_move > -0.01  # Allow up to 1% pullback over 3 candles
+                    momentum_msg = f"Momentum (LONG): {recent_move*100:.2f}% over 3 candles"
+                else:  # SHORT
+                    # For SHORT, we want to see if there's potential for downward momentum despite recent bounce
                     recent_move = (data['close'].iloc[-3] - data['close'].iloc[-1]) / data['close'].iloc[-3]
-                    momentum_ok = recent_move > -0.002
+                    # Allow slight upward moves for short entries
+                    momentum_ok = recent_move > -0.01  # Allow up to 1% bounce over 3 candles
 
-            if not momentum_ok:
-                conditions.append("Momentum check: Concern over direction")
+            # In TestMode, be more permissive with momentum
+            if not self.test_mode_enabled and not momentum_ok:
+                # Use more restrictive momentum check in normal mode only for very bad momentum
+                if position_type == PositionType.LONG:
+                    recent_move = (data['close'].iloc[-1] - data['close'].iloc[-3]) / data['close'].iloc[-3]
+                    if recent_move < -0.025:  # Only fail for significant negative momentum
+                        return False, [f"Significant negative momentum: {recent_move*100:.2f}% over 3 candles"]
+                else:  # SHORT
+                    recent_move = (data['close'].iloc[-3] - data['close'].iloc[-1]) / data['close'].iloc[-3]
+                    if recent_move < -0.025:  # Only fail for significant positive momentum against short
+                        return False, [f"Significant positive momentum: {recent_move*100:.2f}% over 3 candles"]
+            elif not momentum_ok:
+                # In TestMode or when not blocking, just add the info
+                conditions.append(f"Momentum: Concern ({momentum_msg}) (TestMode - NOT blocking)")
+            else:
+                conditions.append(momentum_msg)
 
             # Apply ENHANCED trend filter if enabled
             if self.trend_filter and self.enable_trend_filter:
                 trend_ok, trend_desc, trend_conf, _ = self.trend_filter.evaluate_trend(data, position_type.value)
                 if not trend_ok:
-                    return False, [f"Trend filter: {trend_desc}"]
-                conditions.append(f"Trend: {trend_desc}")
+                    # In TestMode, be more permissive about trend
+                    if self.test_mode_enabled:
+                        conditions.append(f"Trend: {trend_desc} (TestMode - may allow)")
+                        trend_ok = True  # Override in TestMode
+                    else:
+                        return False, [f"Trend filter: {trend_desc}"]
+                if trend_ok:
+                    conditions.append(f"Trend: {trend_desc}")
 
             # Apply ENHANCED MTF analysis if enabled
             if self.mtf_analyzer and self.enable_mtf:
@@ -403,10 +521,17 @@ class EnhancedRsiStrategyV5:
                 mtf_desc = mtf_result['messages'][-1] if mtf_result['messages'] else "MTF analysis error"
 
                 if not mtf_ok:
-                    return False, [f"MTF filter: {mtf_desc}"]
-                # Include all MTF messages for transparency
-                for msg in mtf_result['messages'][:-1]:  # All but the summary
-                    conditions.append(f"MTF: {msg}")
+                    # In TestMode, be more permissive about MTF
+                    if self.test_mode_enabled:
+                        conditions.append(f"MTF: {mtf_desc} (TestMode - may allow)")
+                        mtf_ok = True  # Override in TestMode
+                    else:
+                        return False, [f"MTF filter: {mtf_desc}"]
+
+                if mtf_ok:
+                    # Include all MTF messages for transparency
+                    for msg in mtf_result['messages'][:-1]:  # All but the summary
+                        conditions.append(f"MTF: {msg}")
 
             # Apply volatility filter - we'll use the regime detector for now
             # (Could be expanded with a dedicated volatility filter)
@@ -422,10 +547,17 @@ class EnhancedRsiStrategyV5:
 
             # Check time from last trade
             candles_since_last = len(data) - 1 - self._last_trade_index
-            spacing_ok = candles_since_last >= self.min_candles_between
+
+            # In TestMode, use potentially relaxed spacing
+            effective_min_spacing = self.min_candles_between
+            if self.test_mode_enabled:
+                from config.parameters import TEST_MODE_CONFIG
+                effective_min_spacing = TEST_MODE_CONFIG.get('min_candles_between', effective_min_spacing)
+
+            spacing_ok = candles_since_last >= effective_min_spacing
 
             if not spacing_ok:
-                return False, [f"Insufficient spacing: {candles_since_last} vs {self.min_candles_between} min"]
+                return False, [f"Insufficient spacing: {candles_since_last} vs {effective_min_spacing} min (effective)"]
 
             conditions.append(f"Trade spacing: {candles_since_last} candles OK")
 
@@ -434,24 +566,34 @@ class EnhancedRsiStrategyV5:
                 return False, [f"Paused after {self._consecutive_losses} consecutive losses"]
 
             # Check signal safety using contradiction detector
-            regime_info, conf, regime_details = self.regime_detector.detect_regime(data)
-            safety_assessment = self.contradiction_detector.analyze_signal_safety(
-                data, position_type.value, regime_details
-            )
+            contradiction_score = 0.0
+            contradiction_ok = True
 
-            # Add contradiction information to conditions
-            contradiction_score = safety_assessment['contradiction_summary'].get('contradiction_score', 0.0)
-            conditions.append(f"Contradictions: {safety_assessment['risk_level']} (score: {contradiction_score:.2f})")
+            if not self.test_mode_enabled or not self.bypass_contradiction_detection:
+                regime_info, conf, regime_details = self.regime_detector.detect_regime(data)
+                safety_assessment = self.contradiction_detector.analyze_signal_safety(
+                    data, position_type.value, regime_details
+                )
 
-            # Check if we should filter the signal based on contradictions
-            should_filter = self.contradiction_detector.should_filter_signal(safety_assessment)
-            if should_filter and contradiction_score > 0.3:
-                return False, [f"Signal filtered due to contradictions: {safety_assessment['recommendation']}"]
+                # Add contradiction information to conditions
+                contradiction_score = safety_assessment['contradiction_summary'].get('contradiction_score', 0.0)
+                conditions.append(f"Contradictions: {safety_assessment['risk_level']} (score: {contradiction_score:.2f})")
+
+                # Check if we should filter the signal based on contradictions (skip in TestMode)
+                should_filter = self.contradiction_detector.should_filter_signal(safety_assessment)
+                contradiction_ok = not (should_filter and contradiction_score > 0.3 and not self.test_mode_enabled)
+
+                if not contradiction_ok:
+                    return False, [f"Signal filtered due to contradictions: {safety_assessment['recommendation']}"]
+            else:
+                # In TestMode with contradiction bypass, just add a note
+                conditions.append("Contradictions: SKIPPED (TestMode)")
 
             return True, conditions
 
         except Exception as e:
             logger.error(f"Error checking entry conditions: {e}")
+            import traceback
             logger.error(traceback.format_exc())
             return False, [f"Error in entry conditions: {e}"]
 
@@ -677,10 +819,15 @@ class EnhancedRsiStrategyV5:
             if current_index <= self._pause_until_index:
                 return {"action": "HOLD", "reason": f"Paused after {self._consecutive_losses} losses"}
 
-            # Check trade frequency limit
+            # Check trade frequency limit (adjusted for TestMode)
+            effective_max_trades = self.max_trades_per_100
+            if self.test_mode_enabled:
+                from config.parameters import TEST_MODE_CONFIG
+                effective_max_trades = TEST_MODE_CONFIG.get('max_trades_per_100', effective_max_trades)
+
             recent_trades = len([t for t in self._trade_history[-100:] if t.exit_time is not None])
-            if recent_trades >= self.max_trades_per_100:
-                return {"action": "HOLD", "reason": f"Max trades limit ({recent_trades}/{self.max_trades_per_100})"}
+            if recent_trades >= effective_max_trades:
+                return {"action": "HOLD", "reason": f"Max trades limit ({recent_trades}/{effective_max_trades}) in {'Test' if self.test_mode_enabled else 'Production'} mode"}
 
             # Check LONG entry
             if self._position == PositionType.OUT:

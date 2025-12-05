@@ -31,10 +31,11 @@ from config.market_config import SYMBOL_MAPPING, TIMEFRAME_MAPPING, DEFAULT_CONF
 class TradingBotV4:
     """Trading Bot Version 4 - Complete Integration"""
     
-    def __init__(self, config: Dict[str, Any] = None):
+    def __init__(self, config: Dict[str, Any] = None, test_mode: bool = False):
         # Default settings
         self.config = config or DEFAULT_CONFIG.copy()
-        
+        self.test_mode = test_mode  # Store test mode setting
+
         # Setup logger
         output_dir = self.config.get('output_dir', os.path.join("logs", "backtests"))
         self.output_dir = output_dir
@@ -65,18 +66,18 @@ class TradingBotV4:
         self.live_col_partials = None
         self.live_col_candidates = None
         self.live_col_status = None
-        
+
         # Create instances
-        self.data_fetcher = DataFetcher()
+        self.data_fetcher = DataFetcher(test_mode=test_mode)  # Pass test_mode to DataFetcher
         self.strategy = None
         self.backtest_engine = None
-        
+
         # Bot status
         self.is_running = False
         self.current_position = "OUT"
         self.portfolio_value = self.config.get('initial_capital', 10000.0)
-        
-        self.logger.info("🤖 Trading Bot Version 4 initialized")
+
+        self.logger.info(f"🤖 Trading Bot Version 4 initialized (TestMode: {test_mode})")
         self.logger.info(f"💰 Initial capital: ${self.portfolio_value:,.2f}")
 
     def _filter_strategy_params(self, strategy_params: Dict[str, Any]) -> Dict[str, Any]:
@@ -146,12 +147,31 @@ class TradingBotV4:
             else:
                 filtered_params = self._filter_strategy_params(strategy_params)
 
+                # Add TestMode parameters if TestMode is enabled
+                if self.test_mode:
+                    from config.parameters import TEST_MODE_CONFIG
+                    # Add TestMode parameters to the strategy initialization
+                    filtered_params.update({
+                        'test_mode_enabled': True,
+                        'bypass_contradiction_detection': TEST_MODE_CONFIG.get('bypass_contradiction_detection', True),
+                        'relax_risk_filters': TEST_MODE_CONFIG.get('relax_risk_filters', True),
+                        'relax_entry_conditions': TEST_MODE_CONFIG.get('relax_entry_conditions', True),
+                        'enable_all_signals': TEST_MODE_CONFIG.get('enable_all_signals', True),
+                        # Override some conservative parameters with TestMode values
+                        'max_trades_per_100': TEST_MODE_CONFIG.get('max_trades_per_100', 30),
+                        'min_candles_between': TEST_MODE_CONFIG.get('min_candles_between', 5),
+                        'rsi_entry_buffer': TEST_MODE_CONFIG.get('rsi_entry_buffer', 3),
+                        'rsi_oversold': TEST_MODE_CONFIG.get('rsi_oversold', 30),
+                        'rsi_overbought': TEST_MODE_CONFIG.get('rsi_overbought', 70),
+                        'enable_short_trades': TEST_MODE_CONFIG.get('enable_short_trades', True)
+                    })
+
                 if cls_name == 'EnsembleRsiStrategyV4':
                     self.strategy = EnsembleRsiStrategyV4(**filtered_params)
                     self.logger.info("✅ Ensemble RSI Strategy V4 initialized")
                 else:
                     self.strategy = EnhancedRsiStrategyV5(**filtered_params)
-                    self.logger.info("✅ RSI Strategy Version 5 initialized")
+                    self.logger.info(f"✅ RSI Strategy Version 5 initialized (TestMode: {self.test_mode})")
 
             # Common param logging if available
             rsi_period = filtered_params.get('rsi_period')
@@ -175,17 +195,18 @@ class TradingBotV4:
                 'enable_plotting': True,
                 'detailed_logging': True,
                 'save_trade_logs': True,
-                'output_dir': self.config.get('output_dir', os.path.join("logs", "backtests"))
+                'output_dir': self.config.get('output_dir', os.path.join("logs", "backtests")),
+                'data_fetcher': self.data_fetcher  # NEW: Pass the data fetcher to backtest engine
             }
-            
+
             if backtest_params:
                 backtest_config.update(backtest_params)
-            
+
             self.backtest_engine = EnhancedRSIBacktestV5(**backtest_config)
             self.logger.info("✅ Backtest engine V5 initialized with all diagnostic enhancements")
-            
+
             return True
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error initializing backtest: {e}")
             return False
@@ -253,13 +274,19 @@ class TradingBotV4:
         timeframe: str = "H1",
         days_back: int = 90,
         strategy_params: Dict[str, Any] = None,
-        use_diagnostic: bool = False
+        use_diagnostic: bool = False,
+        test_mode: bool = False
     ) -> Dict[str, Any]:
         """Run complete backtest"""
         try:
-            self.logger.info("🎯 Starting complete backtest")
+            self.logger.info(f"🎯 Starting complete backtest (TestMode: {test_mode})")
             if use_diagnostic:
                 self.logger.info("🔬 Running in diagnostic mode with comprehensive logging")
+
+            # Update test_mode if different from what was set at init
+            if test_mode != self.test_mode:
+                self.test_mode = test_mode
+                self.data_fetcher = DataFetcher(test_mode=test_mode)  # Update data fetcher with new test_mode
 
             # Auto-select params by timeframe when not provided (enables Ensemble on M5/M15)
             if strategy_params is None:
@@ -277,6 +304,10 @@ class TradingBotV4:
                 # Force diagnostic strategy if requested
                 strategy_params = strategy_params.copy()
                 strategy_params['strategy_class'] = 'DiagnosticEnhancedRsiStrategy'
+
+            # Use the locally passed test_mode parameter when initializing strategy
+            original_test_mode = self.test_mode
+            self.test_mode = test_mode  # Update instance test_mode temporarily
             if not self.initialize_strategy(strategy_params, use_diagnostic=use_diagnostic):
                 raise Exception("Error initializing strategy")
 

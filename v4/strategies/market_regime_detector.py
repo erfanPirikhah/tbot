@@ -257,9 +257,11 @@ class MarketRegimeDetector:
         except Exception:
             return 0.5
     
-    def detect_regime(self, data: pd.DataFrame) -> Tuple[str, float, Dict[str, Any]]:
+    def detect_regime(self,
+                     data: pd.DataFrame,
+                     test_mode_enabled: bool = False) -> Tuple[str, float, Dict[str, Any]]:
         """
-        Comprehensive regime detection combining all measures
+        Comprehensive regime detection combining all measures with TestMode flexibility
         """
         try:
             # Get individual regime assessments
@@ -267,7 +269,7 @@ class MarketRegimeDetector:
             trend_regime, trend_conf, trend_metrics = self.calculate_trend_regime(data)
             mom_regime, mom_conf, mom_metrics = self.calculate_momentum_regime(data)
             range_regime, range_conf, range_metrics = self.calculate_range_regime(data)
-            
+
             # Combine regimes into a composite regime
             regime_scores = {
                 vol_regime: vol_conf,
@@ -275,16 +277,21 @@ class MarketRegimeDetector:
                 mom_regime: mom_conf,
                 range_regime: range_conf
             }
-            
+
             # Determine primary regime based on highest confidence
             primary_regime = max(regime_scores, key=regime_scores.get)
             overall_confidence = regime_scores[primary_regime]
-            
+
             # Adjust for regime consistency
             regime_values = list(regime_scores.values())
             consistency_score = 1 - (np.std(regime_values) / np.mean(regime_values)) if np.mean(regime_values) > 0 else 0
             overall_confidence = (overall_confidence + consistency_score) / 2
-            
+
+            # In TestMode, be more permissive with confidence scores
+            if test_mode_enabled:
+                # Boost confidence slightly in TestMode to ensure regime detection doesn't block signals
+                overall_confidence = min(1.0, overall_confidence * 1.5)
+
             # Final regime classification
             if "HIGH_VOLATILITY" in primary_regime:
                 final_regime = "VOLATILE"
@@ -294,9 +301,19 @@ class MarketRegimeDetector:
                 final_regime = "RANGING"
             elif "MOMENTUM" in primary_regime:
                 final_regime = "MOMENTUM"
+            elif "INSUFFICIENT_DATA" in primary_regime:
+                # In TestMode, if there's insufficient data, assume a neutral regime instead of blocking
+                final_regime = "NORMAL" if test_mode_enabled else "INSUFFICIENT_DATA"
+                if test_mode_enabled:
+                    overall_confidence = 0.5  # Neutral confidence
             else:
                 final_regime = "NORMAL"
-            
+
+            # In TestMode, make sure we never return UNKNOWN or INSUFFICIENT_DATA as blocking categories
+            if test_mode_enabled and final_regime in ["UNKNOWN", "INSUFFICIENT_DATA"]:
+                final_regime = "NORMAL"
+                overall_confidence = 0.5
+
             details = {
                 "primary_regime": primary_regime,
                 "final_regime": final_regime,
@@ -312,15 +329,20 @@ class MarketRegimeDetector:
                     "momentum": mom_metrics,
                     "range": range_metrics
                 },
-                "overall_confidence": overall_confidence
+                "overall_confidence": overall_confidence,
+                "test_mode_enabled": test_mode_enabled
             }
-            
+
             self.regime_confidences[final_regime] = overall_confidence
             return final_regime, overall_confidence, details
-            
+
         except Exception as e:
             logger.error(f"Error in comprehensive regime detection: {e}")
-            return "UNKNOWN", 0.3, {"error": str(e)}
+            # In TestMode, return a non-blocking regime if there's an error
+            if test_mode_enabled:
+                return "NORMAL", 0.5, {"error": str(e), "test_mode_enabled": True}
+            else:
+                return "UNKNOWN", 0.3, {"error": str(e)}
 
     def get_adaptive_parameters(self, regime: str) -> Dict[str, Any]:
         """
@@ -376,21 +398,22 @@ class RegimeAwareStrategyParams:
     """
     Class to handle regime-dependent strategy parameters
     """
-    
-    def __init__(self):
+
+    def __init__(self, test_mode_enabled: bool = False):
         self.detector = MarketRegimeDetector()
         self.current_regime = "NORMAL"
         self.current_confidence = 0.5
         self.param_cache = {}
-    
+        self.test_mode_enabled = test_mode_enabled  # Store TestMode setting
+
     def update_regime(self, data: pd.DataFrame) -> Tuple[str, float]:
         """
         Update the current regime based on market data
         """
-        regime, confidence, details = self.detector.detect_regime(data)
+        regime, confidence, details = self.detector.detect_regime(data, test_mode_enabled=self.test_mode_enabled)
         self.current_regime = regime
         self.current_confidence = confidence
-        logger.info(f"Market regime updated: {regime} (confidence: {confidence:.2f})")
+        logger.info(f"Market regime updated: {regime} (confidence: {confidence:.2f}, TestMode: {self.test_mode_enabled})")
         return regime, confidence
     
     def get_current_params(self) -> Dict[str, Any]:

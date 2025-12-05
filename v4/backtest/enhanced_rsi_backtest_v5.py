@@ -50,7 +50,8 @@ class EnhancedRSIBacktestV5:
         enable_plotting: bool = True,
         detailed_logging: bool = True,
         save_trade_logs: bool = True,
-        output_dir: str = os.path.join("logs", "backtests")
+        output_dir: str = os.path.join("logs", "backtests"),
+        data_fetcher: Optional[Any] = None  # NEW: Allow injection of data fetcher
     ):
         self.initial_capital = initial_capital
         self.commission = commission
@@ -59,6 +60,7 @@ class EnhancedRSIBacktestV5:
         self.detailed_logging = detailed_logging
         self.save_trade_logs = save_trade_logs
         self.output_dir = output_dir
+        self.data_fetcher = data_fetcher  # NEW: Store the data fetcher
 
         # ایجاد پوشه خروجی در صورت عدم وجود
         os.makedirs(self.output_dir, exist_ok=True)
@@ -84,20 +86,33 @@ class EnhancedRSIBacktestV5:
         """دریافت داده از MT5 با مدیریت خطا - V5 with improved error handling"""
         logger.info(f"📥 Fetching data for {symbol} ({timeframe}) - {days_back} days")
 
-        if not MT5_AVAILABLE or mt5_fetcher is None:
-            raise ConnectionError("MT5 is not available")
-
         try:
-            # محاسبه تعداد کندل مورد نیاز
-            timeframe_minutes = {
-                "M1": 1, "M5": 5, "M15": 15, "M30": 30,
-                "H1": 60, "H4": 240, "D1": 1440, "W1": 10080
-            }
+            # NEW: Use data fetcher if provided (for new DataProvider system)
+            if self.data_fetcher is not None:
+                # Calculate number of candles needed based on timeframe and days
+                timeframe_minutes = {
+                    "M1": 1, "M5": 5, "M15": 15, "M30": 30,
+                    "H1": 60, "H4": 240, "D1": 1440, "W1": 10080
+                }
 
-            minutes_needed = days_back * 1440
-            candles_needed = min(minutes_needed // timeframe_minutes.get(timeframe, 60), 10000)  # محدودیت معقول
+                minutes_needed = days_back * 1440
+                candles_needed = min(minutes_needed // timeframe_minutes.get(timeframe, 60), 10000)  # معقول حد
+                data = self.data_fetcher.fetch_market_data(symbol, timeframe, candles_needed)
+            else:
+                # Original MT5 logic for backward compatibility
+                if not MT5_AVAILABLE or mt5_fetcher is None:
+                    raise ConnectionError("MT5 is not available")
 
-            data = mt5_fetcher.fetch_market_data(symbol, timeframe, candles_needed)
+                # محاسبه تعداد کندل مورد نیاز
+                timeframe_minutes = {
+                    "M1": 1, "M5": 5, "M15": 15, "M30": 30,
+                    "H1": 60, "H4": 240, "D1": 1440, "W1": 10080
+                }
+
+                minutes_needed = days_back * 1440
+                candles_needed = min(minutes_needed // timeframe_minutes.get(timeframe, 60), 10000)  # محدودیت معقول
+
+                data = mt5_fetcher.fetch_market_data(symbol, timeframe, candles_needed)
 
             if data.empty:
                 raise ValueError(f"No data received for {symbol}")
@@ -106,6 +121,20 @@ class EnhancedRSIBacktestV5:
             if 'open_time' in data.columns:
                 data['open_time'] = pd.to_datetime(data['open_time'])
                 data.set_index('open_time', inplace=True)
+            elif data.index.name is None or not isinstance(data.index, pd.DatetimeIndex):
+                # Ensure we have a datetime index
+                import numpy as np
+                end_time = pd.Timestamp.now()
+                if len(data) > 0:
+                    # Create approximate timestamps from end time going backwards
+                    time_delta = pd.Timedelta(minutes=1 if timeframe == 'M1' else
+                                            5 if timeframe == 'M5' else
+                                            15 if timeframe == 'M15' else
+                                            30 if timeframe == 'M30' else
+                                            60 if timeframe == 'H1' else
+                                            240 if timeframe == 'H4' else 1440)  # Daily
+                    timestamps = [end_time - (len(data) - i) * time_delta for i in range(len(data))]
+                    data.index = pd.DatetimeIndex(timestamps)
 
             # محاسبه اندیکاتورهای تکنیکال بهبود یافته
             data = self._calculate_technical_indicators(data)

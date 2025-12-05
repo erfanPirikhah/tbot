@@ -451,63 +451,88 @@ class EnhancedContradictionSystem:
     """
     Comprehensive contradiction detection system with integrated risk management
     """
-    
-    def __init__(self):
+
+    def __init__(self, test_mode_enabled: bool = False):
         self.detector = SignalContradictionDetector()
         self.active_contradictions = []
+        self.test_mode_enabled = test_mode_enabled  # Store TestMode setting
     
-    def analyze_signal_safety(self, 
-                            data: pd.DataFrame, 
+    def analyze_signal_safety(self,
+                            data: pd.DataFrame,
                             position_type: str,
                             regime_info: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
-        Comprehensive signal safety analysis
+        Comprehensive signal safety analysis with TestMode flexibility
         """
         try:
             # Run contradiction detection
             contradictions = self.detector.detect_all_contradictions(data, position_type)
-            
+
             # Calculate signal quality
             quality_metrics = self.detector.calculate_signal_quality_score(data, position_type, contradictions)
-            
+
             # Integrate with market regime if provided
             if regime_info:
                 regime = regime_info.get('final_regime', 'NORMAL')
                 # Adjust safety for regime
                 if regime in ['VOLATILE', 'TRANSITION']:
                     quality_metrics['final_signal_quality'] *= 0.9  # Reduce quality in unstable regimes
-            
+
+            # In TestMode, be more permissive with safety thresholds
+            if self.test_mode_enabled:
+                # In TestMode, lower threshold for signal quality and be more permissive with risk levels
+                is_safe_condition = contradictions['risk_level'] in ['LOW', 'MEDIUM', 'HIGH'] or quality_metrics['final_signal_quality'] > 0.2  # Much lower threshold
+                risk_level_adjusted = contradictions['risk_level']
+            else:
+                # In normal mode, use original thresholds
+                is_safe_condition = contradictions['risk_level'] in ['LOW', 'MEDIUM'] and quality_metrics['final_signal_quality'] > 0.4
+                risk_level_adjusted = contradictions['risk_level']
+
             # Create safety assessment
             safety_assessment = {
-                'is_safe': contradictions['risk_level'] in ['LOW', 'MEDIUM'] and quality_metrics['final_signal_quality'] > 0.4,
-                'risk_level': contradictions['risk_level'],
+                'is_safe': is_safe_condition,
+                'risk_level': risk_level_adjusted,
                 'signal_quality': quality_metrics['final_signal_quality'],
                 'contradiction_summary': contradictions,
                 'quality_metrics': quality_metrics,
                 'position_type': position_type,
                 'recommendation': contradictions['recommendation']
             }
-            
+
+            # Log with TestMode context
             if safety_assessment['is_safe']:
-                logger.info(f"Signal SAFETY CHECK PASSED for {position_type} (Quality: {quality_metrics['final_signal_quality']:.3f}, Risk: {contradictions['risk_level']})")
+                logger.info(f"Signal SAFETY CHECK PASSED for {position_type} (Quality: {quality_metrics['final_signal_quality']:.3f}, Risk: {contradictions['risk_level']}, TestMode: {self.test_mode_enabled})")
             else:
-                logger.warning(f"Signal SAFETY CHECK FAILED for {position_type} (Quality: {quality_metrics['final_signal_quality']:.3f}, Risk: {contradictions['risk_level']})")
-            
+                log_level = logger.info if self.test_mode_enabled else logger.warning  # Less severe warning in TestMode
+                log_level(f"Signal SAFETY CHECK {'PASSED in TestMode' if self.test_mode_enabled else 'FAILED'} for {position_type} (Quality: {quality_metrics['final_signal_quality']:.3f}, Risk: {contradictions['risk_level']}, TestMode: {self.test_mode_enabled})")
+
             return safety_assessment
-            
+
         except Exception as e:
             logger.error(f"Error in signal safety analysis: {e}")
-            return {
-                'is_safe': False,
-                'risk_level': 'ERROR',
-                'signal_quality': 0.1,
-                'contradiction_summary': {'error': str(e)},
-                'quality_metrics': {'error': str(e)},
-                'position_type': position_type,
-                'recommendation': 'Error in safety assessment'
-            }
+            # In TestMode, be more forgiving with errors
+            if self.test_mode_enabled:
+                return {
+                    'is_safe': True,  # Don't block in TestMode if there's an error
+                    'risk_level': 'TESTMODE',
+                    'signal_quality': 0.5,
+                    'contradiction_summary': {'error': str(e), 'test_mode_bypass': True},
+                    'quality_metrics': {'error': str(e), 'test_mode_bypass': True},
+                    'position_type': position_type,
+                    'recommendation': 'TestMode - Error bypassed, signal allowed'
+                }
+            else:
+                return {
+                    'is_safe': False,
+                    'risk_level': 'ERROR',
+                    'signal_quality': 0.1,
+                    'contradiction_summary': {'error': str(e)},
+                    'quality_metrics': {'error': str(e)},
+                    'position_type': position_type,
+                    'recommendation': 'Error in safety assessment'
+                }
     
-    def should_filter_signal(self, safety_assessment: Dict[str, Any], 
+    def should_filter_signal(self, safety_assessment: Dict[str, Any],
                            max_contradiction_score: float = 0.6,
                            min_signal_quality: float = 0.4) -> bool:
         """
@@ -516,15 +541,28 @@ class EnhancedContradictionSystem:
         try:
             contradiction_score = safety_assessment['contradiction_summary'].get('contradiction_score', 0)
             signal_quality = safety_assessment['signal_quality']
-            
-            # Filter if contradictions are too high OR signal quality is too low
-            should_filter = contradiction_score > max_contradiction_score or signal_quality < min_signal_quality
-            
-            return should_filter
-            
+
+            # In TestMode, be much more permissive
+            if self.test_mode_enabled:
+                # In TestMode, only filter if contradictions are VERY high
+                max_contradiction_score_test = 0.8  # Higher threshold in TestMode
+                min_signal_quality_test = 0.2      # Lower threshold in TestMode
+
+                should_filter = contradiction_score > max_contradiction_score_test or signal_quality < min_signal_quality_test
+                logger.debug(f"TestMode contradiction check: score={contradiction_score:.3f}, quality={signal_quality:.3f}, should_filter={should_filter}")
+                return should_filter
+            else:
+                # In normal mode, use original thresholds
+                should_filter = contradiction_score > max_contradiction_score or signal_quality < min_signal_quality
+                return should_filter
+
         except Exception as e:
             logger.error(f"Error in signal filtering decision: {e}")
-            return True  # Default to filtering if there's an error
+            # In TestMode, default to NOT filtering if there's an error
+            if self.test_mode_enabled:
+                return False  # Don't filter in TestMode if error occurs
+            else:
+                return True  # Default to filtering in normal mode if error occurs
 
 def create_sample_contradiction_data() -> pd.DataFrame:
     """Create sample data for testing contradiction detection"""
