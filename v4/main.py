@@ -138,8 +138,10 @@ class TradingBotV4:
             if use_diagnostic or cls_name == 'DiagnosticEnhancedRsiStrategy':
                 from diagnostic.diagnostic_system import DiagnosticSystem
                 diagnostic_system = DiagnosticSystem()
-                # Filter params to remove diagnostic_system if it's already in filtered_params
+                # Filter params to remove diagnostic_system and strategy_class if they're in filtered_params
                 filtered_params = self._filter_strategy_params(strategy_params)
+                # Remove strategy_class parameter as DiagnosticEnhancedRsiStrategy doesn't expect it
+                filtered_params.pop('strategy_class', None)
                 filtered_params['diagnostic_system'] = diagnostic_system
                 self.strategy = DiagnosticEnhancedRsiStrategy(**filtered_params)
                 self.logger.info("✅ Diagnostic Enhanced RSI Strategy V4 initialized")
@@ -297,6 +299,26 @@ class TradingBotV4:
                     self.logger.warning(f"Param auto-selection failed, falling back to defaults: {e}")
                     strategy_params = OPTIMIZED_PARAMS_V5
 
+            # Apply TestMode settings when enabled
+            if self.test_mode:
+                from config.parameters import TEST_MODE_CONFIG
+                # Override strategy_params with TestMode settings
+                strategy_params['test_mode_enabled'] = True
+                strategy_params['bypass_contradiction_detection'] = True  # Force bypass
+                strategy_params['relax_risk_filters'] = True
+                strategy_params['relax_entry_conditions'] = True
+                strategy_params['enable_all_signals'] = True
+                # Override key parameters for more permissive behavior
+                strategy_params['max_trades_per_100'] = TEST_MODE_CONFIG.get('max_trades_per_100', 50)
+                strategy_params['min_candles_between'] = TEST_MODE_CONFIG.get('min_candles_between', 2)
+                strategy_params['rsi_entry_buffer'] = TEST_MODE_CONFIG.get('rsi_entry_buffer', 3)
+                strategy_params['rsi_oversold'] = TEST_MODE_CONFIG.get('rsi_oversold', 30)
+                strategy_params['rsi_overbought'] = TEST_MODE_CONFIG.get('rsi_overbought', 70)
+                strategy_params['enable_short_trades'] = True
+                strategy_params['enable_trend_filter'] = False
+                strategy_params['enable_mtf'] = False
+                self.logger.info(f"🔧 Applied TestMode overrides for permissive trading")
+
             # Initialize strategy with diagnostic support if requested
             if use_diagnostic:
                 strategy_params = strategy_params or OPTIMIZED_PARAMS_V5
@@ -315,11 +337,17 @@ class TradingBotV4:
                 raise Exception("Error initializing backtest engine")
 
             # Run backtest
+            # When in diagnostic mode, pass a clean strategy_params without 'strategy_class' that might interfere
+            backtest_strategy_params = strategy_params.copy() if strategy_params else {}
+            if use_diagnostic:
+                # Remove strategy_class to avoid conflicts in backtest engine
+                backtest_strategy_params.pop('strategy_class', None)
+
             results = self.backtest_engine.run_backtest(
                 symbol=symbol,
                 timeframe=timeframe,
                 days_back=days_back,
-                strategy_params=strategy_params
+                strategy_params=backtest_strategy_params
             )
 
             # Display results
@@ -342,13 +370,19 @@ class TradingBotV4:
         self,
         symbol: str,
         timeframe: str,
-        duration_hours: int = 24
+        duration_hours: int = 24,
+        test_mode: bool = False
     ):
         """Live simulation"""
         try:
-            self.logger.info(f"🔄 Starting live simulation for {symbol}")
-            
-            if not self.initialize_strategy():
+            self.logger.info(f"🔄 Starting live simulation for {symbol} (TestMode: {test_mode})")
+
+            # Update test_mode if different from what was set at init
+            if test_mode != self.test_mode:
+                self.test_mode = test_mode
+                self.data_fetcher = DataFetcher(test_mode=test_mode)  # Update data fetcher with new test_mode
+
+            if not self.initialize_strategy(test_mode=test_mode):
                 raise Exception("Strategy not initialized")
             
             end_time = datetime.now() + timedelta(hours=duration_hours)
@@ -779,7 +813,8 @@ class TradingBotV4:
         timeframe: str = "M1",
         duration_hours: int = 1,
         data_source: str = "AUTO",
-        max_open_positions: int = 1
+        max_open_positions: int = 1,
+        test_mode: bool = False
     ):
         """
         Live scan across multiple symbols (M1/M5) for 1-2 hours, pick best entries, and log trades.
@@ -794,6 +829,11 @@ class TradingBotV4:
             # Clamp duration to 1..2 hours as requested
             duration_hours = max(1, min(2, int(duration_hours or 1)))
 
+            # Update test_mode if different from what was set at init
+            if test_mode != self.test_mode:
+                self.test_mode = test_mode
+                self.data_fetcher = DataFetcher(test_mode=test_mode)  # Update data fetcher with new test_mode
+
             # Select parameters per timeframe (M1/M5 -> Ensemble by design)
             try:
                 base_params = get_best_params_for_timeframe(timeframe)
@@ -806,12 +846,32 @@ class TradingBotV4:
             for sym in symbols:
                 params = dict(base_params)  # copy
                 cls_name = params.get('strategy_class', 'EnhancedRsiStrategyV5')
+
+                # Add TestMode parameters if TestMode is enabled
+                if test_mode:
+                    from config.parameters import TEST_MODE_CONFIG
+                    # Add TestMode parameters to the strategy initialization
+                    params.update({
+                        'test_mode_enabled': True,
+                        'bypass_contradiction_detection': TEST_MODE_CONFIG.get('bypass_contradiction_detection', True),
+                        'relax_risk_filters': TEST_MODE_CONFIG.get('relax_risk_filters', True),
+                        'relax_entry_conditions': TEST_MODE_CONFIG.get('relax_entry_conditions', True),
+                        'enable_all_signals': TEST_MODE_CONFIG.get('enable_all_signals', True),
+                        # Override some conservative parameters with TestMode values
+                        'max_trades_per_100': TEST_MODE_CONFIG.get('max_trades_per_100', 30),
+                        'min_candles_between': TEST_MODE_CONFIG.get('min_candles_between', 5),
+                        'rsi_entry_buffer': TEST_MODE_CONFIG.get('rsi_entry_buffer', 3),
+                        'rsi_oversold': TEST_MODE_CONFIG.get('rsi_oversold', 30),
+                        'rsi_overbought': TEST_MODE_CONFIG.get('rsi_overbought', 70),
+                        'enable_short_trades': TEST_MODE_CONFIG.get('enable_short_trades', True)
+                    })
+
                 filtered = self._filter_strategy_params(params)
                 if cls_name == 'EnsembleRsiStrategyV4':
                     strategies[sym] = EnsembleRsiStrategyV4(**filtered)
                 else:
                     strategies[sym] = EnhancedRsiStrategyV5(**filtered)
-                self.logger.info(f"✅ Strategy initialized for {sym} | {cls_name}")
+                self.logger.info(f"✅ Strategy initialized for {sym} | {cls_name} (TestMode: {test_mode})")
 
             # Init live log collections
             self._init_live_trade_log(timeframe, symbols, data_source)
@@ -1083,15 +1143,18 @@ def main():
     """Main function"""
     print("🤖 Trading Bot Version 4 - Advanced RSI System")
     print("=" * 60)
-    
-    # Create bot
-    bot = TradingBotV4()
-    
+
+    # Initialize with test mode off by default
+    test_mode = False
+
+    # Create bot with initial test mode
+    bot = TradingBotV4(test_mode=test_mode)
+
     try:
         # Test connections
         print("\n🔌 Testing connections...")
         bot.test_connections()
-        
+
         while True:
             print("\n" + "=" * 60)
             print("Main Menu:")
@@ -1103,18 +1166,19 @@ def main():
             print("6. Run Comprehensive Diagnostic Analysis")
             print("7. Export Diagnostic Analysis Data")
             print("8. Multi-Symbol Live Scan (M1/M5)")
-            print("9. Exit")
-            
-            choice = input("\nPlease select an option: ").strip()
+            print("9. Toggle Test Mode")
+            print("10. Exit")
+
+            choice = input(f"\nCurrent Test Mode: {'ON' if test_mode else 'OFF'} | Please select an option: ").strip()
             
             if choice == "1":
                 # Quick backtest
-                print("\n🎯 Running quick backtest...")
-                bot.run_backtest(symbol="EURUSD", timeframe="H1", days_back=60)
+                print(f"\n🎯 Running quick backtest... (TestMode: {test_mode})")
+                bot.run_backtest(symbol="EURUSD", timeframe="H1", days_back=60, test_mode=test_mode)
                 
             elif choice == "2":
                 # Custom backtest
-                print("\n🎯 Running custom backtest...")
+                print(f"\n🎯 Running custom backtest... (TestMode: {test_mode})")
                 symbol = input("Symbol (default: EURUSD): ").strip() or "EURUSD"
                 timeframe = input("Timeframe (default: H1): ").strip() or "H1"
 
@@ -1124,32 +1188,33 @@ def main():
                 diagnostic_choice = input("Run in diagnostic mode? (y/N): ").strip().lower()
                 use_diagnostic = diagnostic_choice == 'y'
 
-                bot.run_backtest(symbol=symbol, timeframe=timeframe, days_back=days_back, use_diagnostic=use_diagnostic)
+                # Use current test mode setting
+                bot.run_backtest(symbol=symbol, timeframe=timeframe, days_back=days_back, use_diagnostic=use_diagnostic, test_mode=test_mode)
                 
             elif choice == "3":
                 # Live simulation
-                print("\n🔄 Starting live simulation...")
+                print(f"\n🔄 Starting live simulation... (TestMode: {test_mode})")
                 symbol = input("Symbol (default: EURUSD): ").strip() or "EURUSD"
                 timeframe = input("Timeframe (default: H1): ").strip() or "H1"
-                
+
                 bot.is_running = True
-                bot.run_live_simulation(symbol=symbol, timeframe=timeframe, duration_hours=2)
-                
+                bot.run_live_simulation(symbol=symbol, timeframe=timeframe, duration_hours=2, test_mode=test_mode)
+
             elif choice == "4":
                 # Show symbols
                 print("\n📋 Available symbols:")
                 mt5_symbols = bot.get_available_symbols("MT5")
                 crypto_symbols = bot.get_available_symbols("CRYPTOCOMPARE")
-                
+
                 print(f"MT5: {', '.join(mt5_symbols[:10])}{'...' if len(mt5_symbols) > 10 else ''}")
                 print(f"Crypto: {', '.join(crypto_symbols[:10])}{'...' if len(crypto_symbols) > 10 else ''}")
-                
+
             elif choice == "5":
                 # Test data fetching
-                print("\n📊 Testing data fetching...")
+                print(f"\n📊 Testing data fetching... (TestMode: {test_mode})")
                 symbol = input("Symbol (default: EURUSD): ").strip() or "EURUSD"
                 timeframe = input("Timeframe (default: H1): ").strip() or "H1"
-                
+
                 try:
                     data = bot.get_market_data(symbol, timeframe, limit=10)
                     print(f"✅ Data received: {len(data)} candles")
@@ -1157,7 +1222,7 @@ def main():
                     print(f"RSI: {data['RSI'].iloc[-1]:.1f}" if 'RSI' in data.columns else "RSI: Not calculated")
                 except Exception as e:
                     print(f"❌ Error: {e}")
-            
+
             elif choice == "6":
                 # Comprehensive Diagnostic Analysis
                 print("\n🔬 Running comprehensive diagnostic analysis...")
@@ -1213,7 +1278,7 @@ def main():
 
             elif choice == "8":
                 # Multi-symbol live scan (M1/M5)
-                print("\n🔄 Starting multi-symbol live scan...")
+                print(f"\n🔄 Starting multi-symbol live scan... (TestMode: {test_mode})")
                 symbols_input = input("Symbols (comma separated, default: BTC,ETH,ADA,XRP,SOL): ").strip() or "BTC,ETH,ADA,XRP,SOL"
                 symbols = [s.strip().upper() for s in symbols_input.split(",") if s.strip()]
                 timeframe = (input("Timeframe (M1 or M5, default: M1): ").strip() or "M1").upper()
@@ -1224,18 +1289,26 @@ def main():
                 except Exception:
                     duration_hours = 1
                 bot.is_running = True
-                bot.run_multi_symbol_live_scan(symbols=symbols, timeframe=timeframe, duration_hours=duration_hours)
+                bot.run_multi_symbol_live_scan(symbols=symbols, timeframe=timeframe, duration_hours=duration_hours, test_mode=test_mode)
                 print("\n📄 Live data stored in MongoDB collections: live_entries, live_exits, live_partial_exits, live_candidates, live_status")
 
             elif choice == "9":
+                # Toggle Test Mode
+                test_mode = not test_mode
+                # Recreate bot with new test mode
+                bot = TradingBotV4(test_mode=test_mode)
+                print(f"\n⚙️ Test Mode is now {'ON' if test_mode else 'OFF'}")
+                bot.test_connections()
+
+            elif choice == "10":
                 # Exit
                 print("\n👋 Goodbye!")
                 bot.stop()
                 break
-                
+
             else:
                 print("❌ Invalid option!")
-                
+
     except KeyboardInterrupt:
         print("\n\n🛑 Program stopped by user")
         bot.stop()

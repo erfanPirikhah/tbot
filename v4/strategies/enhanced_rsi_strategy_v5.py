@@ -226,7 +226,8 @@ class EnhancedRsiStrategyV5:
         ) if self.enable_mtf else None
 
         self.trend_filter = AdvancedTrendFilter(
-            strength_threshold=self.trend_strength_threshold
+            strength_threshold=self.trend_strength_threshold,
+            test_mode_enabled=self.test_mode_enabled
         ) if self.enable_trend_filter else None
 
         self.regime_detector = MarketRegimeDetector()
@@ -235,7 +236,7 @@ class EnhancedRsiStrategyV5:
             max_position_ratio=self.max_position_size_ratio,
             min_position_size=self.min_position_size
         )
-        self.contradiction_detector = EnhancedContradictionSystem()
+        self.contradiction_detector = EnhancedContradictionSystem(test_mode_enabled=self.test_mode_enabled)
 
         # State variables
         self._position = PositionType.OUT
