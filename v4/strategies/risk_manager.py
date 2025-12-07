@@ -392,11 +392,11 @@ class DynamicRiskManager:
             if regime_info:
                 regime = regime_info.get('final_regime', 'NORMAL')
                 regime_multipliers = {
-                    'VOLATILE': 1.8,
-                    'TRENDING': 1.5,
-                    'RANGING': 2.2,
-                    'HIGH_VOLATILITY': 2.0,
-                    'STRONG_TREND': 1.3
+                    'VOLATILE': 2.5,        # WIDEST - need room
+                    'TRENDING': 1.8,        # MEDIUM - follow trend
+                    'RANGING': 1.4,         # TIGHTEST - quick reversals
+                    'HIGH_VOLATILITY': 2.8, # MAX WIDTH
+                    'STRONG_TREND': 1.6     # Tight-ish to lock trend
                 }
                 regime_adjustment = regime_multipliers.get(regime, 1.0)
             

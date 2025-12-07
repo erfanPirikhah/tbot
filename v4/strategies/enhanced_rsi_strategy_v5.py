@@ -609,7 +609,11 @@ class EnhancedRsiStrategyV5:
             sl_multiplier = atr_mult  # Use the enhanced multiplier
 
             # Calculate take profit based on the new SL multiplier
-            tp_multiplier = sl_multiplier * self.take_profit_ratio
+            # decoupled from SL multiplier for better adaptability
+            if regime == "RANGING":
+                tp_multiplier = 1.6 * self.take_profit_ratio 
+            else:
+                 tp_multiplier = sl_multiplier * self.take_profit_ratio
 
             if position_type == PositionType.LONG:
                 stop_loss = entry_price - (atr * sl_multiplier)
@@ -717,17 +721,22 @@ class EnhancedRsiStrategyV5:
 
                 else:  # SHORT
                     new_trailing = current_price + trailing_atr
-                    if new_trailing < self._current_trade.trailing_stop or self._current_trade.trailing_stop == self._current_trade.stop_loss:
+                    # For SHORT, we tighten if new stop is LOWER (closer to current price)
+                    # or if we haven't set a trailing stop meaningfully yet (initial check)
+                    current_trailing = self._current_trade.trailing_stop
+                    if new_trailing < current_trailing:
                         self._current_trade.trailing_stop = new_trailing
                         logger.debug(f"Trailing stop updated: {new_trailing:.4f}")
 
                     if current_price >= self._current_trade.trailing_stop:
                         return self._create_exit_signal("TRAILING_STOP", current_price, current_time)
 
-            # Time Exit
+            # Time Exit - Only if not profitable enough or losing
             trade_duration = current_index - self._last_trade_index
             if trade_duration >= self.max_trade_duration:
-                return self._create_exit_signal("TIME_EXIT", current_price, current_time)
+                 # Only exit if profit is small (< 1%) regardless of direction, or if losing
+                if profit_pct < 1.0:
+                    return self._create_exit_signal("TIME_EXIT", current_price, current_time)
 
             return None
 
