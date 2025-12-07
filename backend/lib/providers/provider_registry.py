@@ -16,12 +16,12 @@ class DataProviderRegistry:
     
     def _initialize_providers(self):
         """Initialize all available providers in order of preference"""
-        # 1. MT5 Provider (primary)
+        # 1. MT5 Provider (primary) - best for Forex
         mt5_provider = MT5Provider()
         if mt5_provider.test_connection():
             self.providers.append(mt5_provider)
         
-        # 2. CryptoCompare Provider (secondary)
+        # 2. CryptoCompare Provider (secondary) - good for crypto
         cc_provider = CryptoCompareProvider()
         if cc_provider.test_connection():
             self.providers.append(cc_provider)
@@ -38,25 +38,42 @@ class DataProviderRegistry:
     def get_data(self, symbol: str, timeframe: str, limit: int) -> Dict[str, Any]:
         """Fetch data from the first available provider with failover"""
         errors = {}
+        best_data = None
+        best_source = None
+        best_count = 0
         
         for i, provider in enumerate(self.providers):
             try:
                 data = provider.fetch_data(symbol, timeframe, limit)
                 
-                # Verify the data is valid
-                if data.empty or len(data) < limit * 0.8:  # At least 80% of requested data
-                    continue
-                    
-                return {
-                    'data': data,
-                    'source': type(provider).__name__,
-                    'provider_index': i,
-                    'success': True
-                }
+                # Track the best data we get (most candles)
+                if data is not None and not data.empty and len(data) > best_count:
+                    best_data = data
+                    best_source = type(provider).__name__
+                    best_count = len(data)
                 
+                # If we got what we asked for (80%+), return immediately
+                if data is not None and not data.empty and len(data) >= limit * 0.8:
+                    return {
+                        'data': data,
+                        'source': type(provider).__name__,
+                        'provider_index': i,
+                        'success': True
+                    }
+                    
             except Exception as e:
                 errors[type(provider).__name__] = str(e)
                 continue
+        
+        # Return best available data even if less than requested
+        if best_data is not None and not best_data.empty:
+            return {
+                'data': best_data,
+                'source': best_source,
+                'provider_index': 0,
+                'success': True,
+                'note': f'Only got {best_count} candles out of {limit} requested'
+            }
         
         # If all providers failed
         return {
