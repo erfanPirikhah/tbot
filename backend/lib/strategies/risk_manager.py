@@ -295,10 +295,28 @@ class DynamicRiskManager:
             else:  # SHORT
                 price_risk = abs(stop_loss - entry_price)
 
-            # Validate price risk
-            if price_risk <= 0 or price_risk > entry_price * 0.1:  # Max 10% stop
-                logger.warning(f"Invalid price risk: {price_risk}, using default")
-                price_risk = entry_price * 0.008  # Default 0.8% stop
+            # Validate and fix price risk - this is the main cause of zero trades
+            if price_risk <= 0:
+                logger.warning(f"Invalid price risk: {price_risk}. Calculating fallback SL...")
+                # Calculate ATR-based fallback stop-loss
+                if len(data) >= 14:
+                    high = data['high']
+                    low = data['low']
+                    close = data['close']
+                    tr1 = high - low
+                    tr2 = abs(high - close.shift())
+                    tr3 = abs(low - close.shift())
+                    true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+                    atr = true_range.rolling(14).mean().iloc[-1]
+                    price_risk = atr * 2.0  # Use 2x ATR as default stop distance
+                else:
+                    price_risk = entry_price * 0.015  # Default 1.5% stop
+                logger.info(f"Using fallback price_risk: {price_risk}")
+            
+            # Also validate against unreasonably large stop
+            if price_risk > entry_price * 0.1:  # Max 10% stop
+                logger.warning(f"Price risk too large: {price_risk}, capping to 10%")
+                price_risk = entry_price * 0.08  # Default 8% stop
 
             # Calculate position size
             position_size = risk_amount / price_risk if price_risk > 0 else 0

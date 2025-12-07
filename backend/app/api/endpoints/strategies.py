@@ -49,24 +49,24 @@ async def retrain_ml_model(request: MLRetrainRequest):
     """Retrain ML model"""
     try:
         # Import training modules
-        from lib.ml_training.prepare_data import prepare_training_data
-        from lib.ml_training.train_model import train_regime_model
+        from lib.ml_training.prepare_data import prepare_dataset
+        from lib.ml_training.train_model import train_model
         
         logger.info(f"Starting ML retraining for {request.symbol}")
         
         # Prepare data
         dataset_path = "lib/ml_training/dataset.csv"
-        prepare_training_data(
+        prepare_dataset(
             symbol=request.symbol,
-            timeframe=request.timeframe,
-            days=request.days,
+            interval=request.timeframe,
+            limit=request.days * 24,  # Convert days to hours for 1h timeframe
             output_path=dataset_path
         )
         
         # Train model
         model_path = "lib/ml_training/regime_model.joblib"
-        train_regime_model(
-            dataset_path=dataset_path,
+        train_model(
+            input_path=dataset_path,
             output_path=model_path
         )
         

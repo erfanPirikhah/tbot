@@ -255,46 +255,62 @@ ENSEMBLE_INTRADAY_M15 = {
     'volatility_band_check': True,  # Check price position in volatility bands
 }
 
-# ✅ H1 profile tuned for higher win rate and realistic TP/SL
+# ✅ H1 profile - OPTIMIZED for Medium Risk and Higher Profitability
 ENHANCED_INTRADAY_H1 = {
+    # RSI Settings - Balanced for H1
     'rsi_period': 14,
     'rsi_oversold': 30,
     'rsi_overbought': 70,
-    'rsi_entry_buffer': 4,
+    'rsi_entry_buffer': 5,  # Increased from 4 for more entry opportunities
 
-    'risk_per_trade': 0.01,
-    'stop_loss_atr_multiplier': 1.8,
-    'take_profit_ratio': 2.0,
-    'min_position_size': 200,
-    'max_position_size_ratio': 0.25,
+    # Risk Management - Medium Risk Profile
+    'risk_per_trade': 0.02,  # Increased to 2% for medium risk
+    'stop_loss_atr_multiplier': 1.5,  # Tighter SL for better RR
+    'take_profit_ratio': 2.5,  # Target 2.5:1 RR
+    'min_position_size': 100,  # Reduced for more flexibility
+    'max_position_size_ratio': 0.35,  # Increased for medium risk
 
-    'max_trades_per_100': 25,
-    'min_candles_between': 3,
-    'max_trade_duration': 80,
+    # Trade Control - More Opportunities
+    'max_trades_per_100': 35,  # Increased from 25
+    'min_candles_between': 3,  # Keep short spacing
+    'max_trade_duration': 100,  # More time for trades to develop
 
+    # Filters - Relaxed for More Trades
     'enable_trend_filter': True,
-    'trend_strength_threshold': 0.005,
+    'trend_strength_threshold': 0.25,  # Lowered from 0.4 for more permissiveness
     'enable_volume_filter': False,
-    'enable_volatility_filter': False,
+    'enable_volatility_filter': False,  # Disabled - let trades through
     'enable_short_trades': True,
 
+    # Exit Management - Optimized
     'enable_trailing_stop': True,
-    'trailing_activation_percent': 1.0,
+    'trailing_activation_percent': 0.8,  # Earlier activation
     'trailing_stop_atr_multiplier': 1.2,
     'enable_partial_exit': True,
     'partial_exit_ratio': 0.5,
-    'partial_exit_threshold': 1.0,
+    'partial_exit_threshold': 1.2,  # Earlier partial exit
 
-    # Disable strict MTF gating for H1 to avoid over-filtering entries
+    # MTF - Disabled for H1 to avoid over-filtering
     'enable_mtf': False,
+    
+    # MTF settings (if enabled later)
+    'mtf_require_all': False,
+    'mtf_long_rsi_min': 35.0,
+    'mtf_short_rsi_max': 65.0,
 
-    # Advanced Filters (new addition)
-    'enable_advanced_filters': True,  # Enable advanced market regime and condition filters
-    'advanced_filter_confidence_threshold': 0.65,  # Moderate threshold for H1
-    'market_strength_min_score': 3.0,  # Appropriate for H1 approach
-    'support_resistance_check': True,  # Check price against support/resistance levels
-    'divergence_check': True,  # Check for RSI-price divergence
-    'volatility_band_check': True,  # Check price position in volatility bands
+    # Advanced Filters - Moderate
+    'enable_advanced_filters': True,
+    'advanced_filter_confidence_threshold': 0.55,  # Lowered for more trades
+    'market_strength_min_score': 2.5,  # Lowered for more trades
+    'support_resistance_check': True,
+    'divergence_check': True,
+    'volatility_band_check': True,
+    
+    # Test Mode settings (used when test_mode_enabled=True)
+    'test_mode_enabled': False,
+    'bypass_contradiction_detection': False,
+    'relax_risk_filters': False,
+    'relax_entry_conditions': False,
 }
 
 # تنظیمات بر اساس شرایط مختلف بازار

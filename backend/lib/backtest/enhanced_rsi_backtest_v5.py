@@ -14,6 +14,7 @@ import warnings
 import sys
 import os
 import traceback
+import inspect
 from scipy import stats
 try:
     import plotly.graph_objects as go
@@ -418,8 +419,19 @@ class EnhancedRSIBacktestV5:
             strategy_params = OPTIMIZED_PARAMS_V5.copy()
             logger.info("📋 Using OPTIMIZED_PARAMS_V5 with all diagnostic improvements")
 
-        # ایجاد استراتژی V5
-        strategy = EnhancedRsiStrategyV5(**strategy_params)
+        # ایجاد استراتژی V5 - Filter params to only include valid constructor arguments
+        sig = inspect.signature(EnhancedRsiStrategyV5.__init__)
+        valid_param_names = [p for p in sig.parameters.keys() if p != 'self']
+        
+        filtered_params = {k: v for k, v in strategy_params.items() if k in valid_param_names}
+        
+        # Log any filtered-out params for debugging
+        removed_params = set(strategy_params.keys()) - set(filtered_params.keys())
+        if removed_params:
+            logger.debug(f"Filtered out non-constructor params: {removed_params}")
+        
+        logger.info(f"📋 Creating strategy with {len(filtered_params)} valid parameters")
+        strategy = EnhancedRsiStrategyV5(**filtered_params)
 
         try:
             # دریافت داده

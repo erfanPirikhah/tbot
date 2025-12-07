@@ -41,29 +41,15 @@ class BacktestService:
         try:
             logger.info(f"Starting backtest {task_id} for {symbol}...")
             
-            # 1. Initialize Strategy
-            # Filter out invalid parameters (like additionalProp1 from Swagger UI)
-            valid_params = {}
-            if params:
-                # Only include known strategy parameters
-                known_params = {
-                    'rsi_period', 'risk_per_trade', 'rsi_oversold', 'rsi_overbought',
-                    'enable_trend_filter', 'enable_mtf', 'test_mode_enabled',
-                    'bypass_contradiction_detection', 'relax_risk_filters',
-                    'relax_entry_conditions', 'enable_all_signals', 'enable_short_trades'
-                }
-                valid_params = {k: v for k, v in params.items() if k in known_params}
-            
-            strategy = EnhancedRsiStrategyV5(**valid_params)
-            
-            # 2. Run Backtest
+            # Run backtest with EnhancedRSIBacktestV5
+            # The backtest engine will handle strategy initialization with params
             backtester = EnhancedRSIBacktestV5(
                 initial_capital=10000.0,
                 commission=0.0003,
                 slippage=0.0001
             )
             
-            # Run backtest with strategy
+            # Run backtest - pass params directly, engine will handle strategy init
             results = backtester.run_backtest(
                 symbol=symbol,
                 timeframe=timeframe,

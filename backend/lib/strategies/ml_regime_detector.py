@@ -5,9 +5,19 @@ import logging
 import os
 import json
 from typing import Tuple, Dict, Any
-from strategies.market_regime_detector import MarketRegimeDetector
+
+# Fix import path - try relative import first, then absolute
+try:
+    from .market_regime_detector import MarketRegimeDetector
+except ImportError:
+    from strategies.market_regime_detector import MarketRegimeDetector
 
 logger = logging.getLogger(__name__)
+
+# Get the base directory dynamically
+_BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_DEFAULT_MODEL_PATH = os.path.join(_BASE_DIR, "ml_training", "regime_model.joblib")
+_DEFAULT_FEATURES_PATH = os.path.join(_BASE_DIR, "ml_training", "features.json")
 
 class MLMarketRegimeDetector(MarketRegimeDetector):
     """
@@ -16,12 +26,18 @@ class MLMarketRegimeDetector(MarketRegimeDetector):
     """
     
     def __init__(self, 
-                 model_path: str = "ml_training/regime_model.joblib",
-                 features_path: str = "ml_training/features.json"):
+                 model_path: str = None,
+                 features_path: str = None):
         super().__init__()
         self.model = None
         self.feature_names = []
         self.model_loaded = False
+        
+        # Use dynamic paths if not provided
+        if model_path is None:
+            model_path = _DEFAULT_MODEL_PATH
+        if features_path is None:
+            features_path = _DEFAULT_FEATURES_PATH
         
         self._load_model(model_path, features_path)
         
