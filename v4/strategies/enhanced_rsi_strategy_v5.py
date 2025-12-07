@@ -230,7 +230,14 @@ class EnhancedRsiStrategyV5:
             test_mode_enabled=self.test_mode_enabled
         ) if self.enable_trend_filter else None
 
-        self.regime_detector = MarketRegimeDetector()
+        # Initialize Regime Detector (Try ML first, fallback to standard)
+        try:
+            from .ml_regime_detector import MLMarketRegimeDetector
+            self.regime_detector = MLMarketRegimeDetector()
+            logger.info("✅ Using ML-Enhanced Market Regime Detector")
+        except Exception as e:
+            logger.warning(f"⚠️ Could not load ML Regime Detector ({e}), falling back to standard.")
+            self.regime_detector = MarketRegimeDetector()
         self.risk_manager = DynamicRiskManager(
             base_risk_per_trade=self.risk_per_trade,
             max_position_ratio=self.max_position_size_ratio,
