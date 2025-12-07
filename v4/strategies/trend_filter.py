@@ -105,8 +105,8 @@ class AdvancedTrendFilter:
             else:
                 medium_trend = short_trend
             
-            # Combine trends with weights
-            combined_trend = 0.6 * short_trend + 0.4 * medium_trend
+            # Combine trends with weights - FIX: Increase short-term weight to reduce lag
+            combined_trend = 0.8 * short_trend + 0.2 * medium_trend
             trend_strength = min(1.0, abs(combined_trend) * 50)  # Scale to 0-1
             
             if combined_trend > 0:

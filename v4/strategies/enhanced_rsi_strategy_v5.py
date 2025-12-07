@@ -377,25 +377,26 @@ class EnhancedRsiStrategyV5:
         # Use ATR-based volatility measure for RSI threshold adjustment
         try:
             close_prices = data['close']
-            # Calculate 20-period ATR to measure volatility
+            # Calculate 20-period ATR to measure volatility - FIX: Look-ahead bias by shifting 1
             high_low = data['high'] - data['low']
             high_close = abs(data['high'] - close_prices.shift())
             low_close = abs(data['low'] - close_prices.shift())
             true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-            atr = true_range.rolling(window=20).mean().iloc[-1]
+            atr = true_range.shift(1).rolling(window=20).mean().iloc[-1]
 
-            # Calculate current price level relative to recent range
-            recent_high = data['high'].rolling(20).max().iloc[-1]
-            recent_low = data['low'].rolling(20).min().iloc[-1]
-            price_volatility = (recent_high - recent_low) / close_prices.iloc[-1] if close_prices.iloc[-1] != 0 else 0.01
+            # Calculate current price level relative to recent range - FIX: Use historical data
+            recent_high = data['high'].shift(1).rolling(20).max().iloc[-1]
+            recent_low = data['low'].shift(1).rolling(20).min().iloc[-1]
+            # Use previous close for volatility ratio to be safe, or open of current candle
+            ref_price = close_prices.iloc[-2] if len(close_prices) > 1 else close_prices.iloc[-1]
+            price_volatility = (recent_high - recent_low) / ref_price if ref_price != 0 else 0.01
 
             # Calculate RSI volatility (how much RSI is fluctuating)
-            if 'RSI' in data.columns and len(data['RSI']) >= 10:
-                rsi_volatility = data['RSI'].tail(10).std()
+            if 'RSI' in data.columns and len(data['RSI']) >= 11:
+                # Use previous 10 candles, excluding current
+                rsi_volatility = data['RSI'].shift(1).tail(10).std()
             else:
-                # Calculate RSI to determine volatility
-                temp_data = self._calculate_rsi(data.tail(10))
-                rsi_volatility = temp_data['RSI'].std() if 'RSI' in temp_data.columns else 0.1
+                rsi_volatility = 0.1
 
             # Adjust thresholds based on market conditions
             if self.test_mode_enabled:
@@ -537,12 +538,57 @@ class EnhancedRsiStrategyV5:
             # Apply volatility filter - we'll use the regime detector for now
             # (Could be expanded with a dedicated volatility filter)
 
-            # Check volume confirmation (if available)
+            # Check volume confirmation (if available) - ENHANCED with OBV
             volume_ok = True
-            if 'volume' in data.columns and len(data) > 10:
+            if 'volume' in data.columns and len(data) > 20: # Need history for OBV
                 avg_vol = data['volume'].rolling(10).mean().iloc[-1]
                 current_vol = data['volume'].iloc[-1]
+                
+                # Basic volume filter
                 volume_ok = current_vol >= avg_vol * 0.5  # At least 50% of average
+                if not volume_ok:
+                    conditions.append(f"Volume below avg: {current_vol:.0f} vs {avg_vol:.0f}")
+                
+                # OBV Filter
+                try:
+                    vol = data['volume'].fillna(0)
+                    change = data['close'].diff().fillna(0)
+                    direction = np.sign(change)
+                    obv = (direction * vol).cumsum()
+                    
+                    # Calculate OBV Trend
+                    obv_sma = obv.rolling(window=20).mean()
+                    current_obv = obv.iloc[-1]
+                    obv_trend_ok = True
+                    obv_msg = ""
+                    
+                    if position_type == PositionType.LONG:
+                        # For LONG, OBV should be above its SMA or rising
+                        if current_obv < obv_sma.iloc[-1]:
+                            obv_msg = "OBV below SMA(20) (Bearish flow)"
+                            obv_trend_ok = False
+                    else:
+                        # For SHORT, OBV should be below its SMA or falling
+                        if current_obv > obv_sma.iloc[-1]:
+                            obv_msg = "OBV above SMA(20) (Bullish flow)"
+                            obv_trend_ok = False
+                            
+                    if not obv_trend_ok:
+                        # In TestMode, just warn
+                        if self.test_mode_enabled:
+                            conditions.append(f"OBV Warning: {obv_msg} (TestMode)")
+                        else:
+                            return False, [f"OBV Filter: {obv_msg}"]
+                    else:
+                        conditions.append("OBV Trend: Supportive")
+                        
+                except Exception as e:
+                    logger.warning(f"Error calculating OBV: {e}")
+            elif 'volume' in data.columns:
+                 # Standard fallback for short data
+                avg_vol = data['volume'].rolling(10).mean().iloc[-1]
+                current_vol = data['volume'].iloc[-1]
+                volume_ok = current_vol >= avg_vol * 0.5
                 if not volume_ok:
                     conditions.append(f"Volume below avg: {current_vol:.0f} vs {avg_vol:.0f}")
 
@@ -664,34 +710,53 @@ class EnhancedRsiStrategyV5:
             if profit_pct > self._current_trade.highest_profit:
                 self._current_trade.highest_profit = profit_pct
 
-            # Partial exit with enhanced conditions
-            if (self.enable_partial_exit and
-                profit_pct >= self.partial_exit_threshold and
-                not self._current_trade.partial_exit_done):
+            # Partial exit with enhanced conditions (PnL or Dynamic RSI)
+            if self.enable_partial_exit and not self._current_trade.partial_exit_done:
+                should_partial_exit = False
+                
+                # Condition 1: PnL usage
+                if profit_pct >= self.partial_exit_threshold:
+                    should_partial_exit = True
+                    reason = "PARTIAL_TAKE_PROFIT_Target"
+                    
+                # Condition 2: Dynamic RSI Extreme (Strategy Refinement #4)
+                # Only if profitable (don't partial exit in loss just due to RSI, unless emergency?)
+                elif profit_pct > 0.5: 
+                    atr = self.calculate_atr(data) # calc just in case needed
+                    # We need RSI. Logic might not have it in `data` if not pre-calc, but usually it is.
+                    if 'RSI' in data.columns:
+                        current_rsi = data['RSI'].iloc[-1]
+                        if self._position == PositionType.LONG and current_rsi > (self.rsi_overbought + 5):
+                            should_partial_exit = True
+                            reason = f"PARTIAL_TAKE_PROFIT_RSI_Extreme({current_rsi:.1f})"
+                        elif self._position == PositionType.SHORT and current_rsi < (self.rsi_oversold - 5):
+                            should_partial_exit = True
+                            reason = f"PARTIAL_TAKE_PROFIT_RSI_Extreme({current_rsi:.1f})"
+                
+                if should_partial_exit:
+                    self._current_trade.partial_exit_done = True
+                    partial_quantity = self._current_trade.quantity * self.partial_exit_ratio
+                    partial_pnl = (profit_pct / 100) * partial_quantity * entry_price
+                    self._portfolio_value += partial_pnl
 
-                self._current_trade.partial_exit_done = True
-                partial_quantity = self._current_trade.quantity * self.partial_exit_ratio
-                partial_pnl = (profit_pct / 100) * partial_quantity * entry_price
-                self._portfolio_value += partial_pnl
+                    # Update trailing stop after partial exit
+                    if self.enable_trailing_stop:
+                        atr = self.calculate_atr(data)
+                        if self._position == PositionType.LONG:
+                            self._current_trade.trailing_stop = current_price - (atr * self.trailing_stop_atr_multiplier)
+                        else:
+                            self._current_trade.trailing_stop = current_price + (atr * self.trailing_stop_atr_multiplier)
 
-                # Update trailing stop after partial exit
-                if self.enable_trailing_stop:
-                    atr = self.calculate_atr(data)
-                    if self._position == PositionType.LONG:
-                        self._current_trade.trailing_stop = current_price - (atr * self.trailing_stop_atr_multiplier)
-                    else:
-                        self._current_trade.trailing_stop = current_price + (atr * self.trailing_stop_atr_multiplier)
+                    logger.info(f"✅ Partial exit: {self.partial_exit_ratio*100}% at profit {profit_pct:.2f}% ({reason})")
 
-                logger.info(f"✅ Partial exit: {self.partial_exit_ratio*100}% at profit {profit_pct:.2f}%")
-
-                return {
-                    "action": "PARTIAL_EXIT",
-                    "price": current_price,
-                    "quantity": partial_quantity,
-                    "pnl_percentage": profit_pct,
-                    "pnl_amount": partial_pnl,
-                    "reason": "PARTIAL_TAKE_PROFIT"
-                }
+                    return {
+                        "action": "PARTIAL_EXIT",
+                        "price": current_price,
+                        "quantity": partial_quantity,
+                        "pnl_percentage": profit_pct,
+                        "pnl_amount": partial_pnl,
+                        "reason": reason
+                    }
 
             # Stop Loss
             if self._position == PositionType.LONG and current_price <= self._current_trade.stop_loss:
