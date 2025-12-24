@@ -457,3 +457,70 @@ def get_params_for_capital(capital: float) -> dict:
         return OPTIMIZED_PARAMS_V4.copy()
     else:
         return CONSERVATIVE_PARAMS.copy()
+
+
+# 🔴 پارامترهای بهینه‌شده برای LIVE TRADING
+# این پارامترها برای تایم‌فریم‌های کوتاه (1m, 5m) و Forex بهینه شده‌اند
+LIVE_TRADING_PARAMS = {
+    # RSI - سبک‌تر برای سیگنال بیشتر
+    'rsi_period': 14,
+    'rsi_oversold': 40,  # افزایش از 30 - RSI در فارکس به ندرت زیر 30 می‌رود
+    'rsi_overbought': 60,  # کاهش از 70 - RSI در فارکس به ندرت بالای 70 می‌رود
+    'rsi_entry_buffer': 10,  # افزایش از 3 به 10 - بازه ورود بیشتر
+    
+    # Risk Management
+    'risk_per_trade': 0.02,  # 2% ریسک
+    'stop_loss_atr_multiplier': 1.5,  # سخت‌تر
+    'take_profit_ratio': 2.0,  # 2:1 RR
+    'min_position_size': 100,
+    'max_position_size_ratio': 0.3,
+    
+    # Trade Control - بیشتر معامله
+    'max_trades_per_100': 50,  # افزایش
+    'min_candles_between': 2,  # کاهش از 5
+    'max_trade_duration': 60,  # برای 1m کافی است
+    
+    # Filters - غیرفعال برای سیگنال بیشتر
+    'enable_trend_filter': False,  # غیرفعال برای 1m
+    'trend_strength_threshold': 0.1,
+    'enable_volume_filter': False,
+    'enable_volatility_filter': False,  # غیرفعال
+    'enable_short_trades': True,
+    
+    # Trailing Stop
+    'enable_trailing_stop': True,
+    'trailing_activation_percent': 0.5,  # زودتر فعال شود
+    'trailing_stop_atr_multiplier': 1.0,
+    
+    # Partial Exit
+    'enable_partial_exit': True,
+    'partial_exit_ratio': 0.5,
+    'partial_exit_threshold': 1.0,
+    
+    # Loss Control
+    'max_consecutive_losses': 5,
+    'pause_after_losses': 5,
+    'risk_reduction_after_loss': False,
+    
+    # MTF - غیرفعال برای 1m
+    'enable_mtf': False,  # برای تایم‌فریم کوتاه مناسب نیست
+    'mtf_timeframes': [],
+    'mtf_require_all': False,
+    'mtf_long_rsi_min': 35.0,
+    'mtf_short_rsi_max': 65.0,
+    
+    # Advanced Filters - غیرفعال
+    'enable_advanced_filters': False,
+    'advanced_filter_confidence_threshold': 0.5,
+    'market_strength_min_score': 2.0,
+    'support_resistance_check': False,
+    'divergence_check': False,
+    'volatility_band_check': False,
+    
+    # Test Mode - فعال برای سیگنال بیشتر
+    'test_mode_enabled': True,
+    'bypass_contradiction_detection': True,
+    'relax_risk_filters': True,
+    'relax_entry_conditions': True,
+    'enable_all_signals': False,
+}

@@ -1,0 +1,19 @@
+version: '3.8'  
+  
+services:  
+  app:  
+    build:  
+      context: .  
+      dockerfile: Dockerfile  
+    container_name: crypto_trading_bot_app_dev  
+    environment:  
+      - POSTGRES_HOST=localhost  
+      - POSTGRES_PORT=5432  
+      - POSTGRES_USERNAME=postgres  
+      - POSTGRES_PASSWORD=H@mrah8339!  
+      - POSTGRES_DATABASE=crypto  
+    ports:  
+      - "8000:8000"  
+    volumes:  
+      - .:/app  # Mount the current directory for development  
+    restart: unless-stopped 

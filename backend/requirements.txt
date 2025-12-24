@@ -9,3 +9,6 @@ xgboost
 scikit-learn
 python-dotenv
 requests
+asyncpg
+psycopg2-binary
+sqlalchemy

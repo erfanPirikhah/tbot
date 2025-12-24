@@ -6,6 +6,7 @@ import pandas as pd
 
 from lib.data.data_fetcher import DataFetcher
 from lib.strategies.enhanced_rsi_strategy_v5 import EnhancedRsiStrategyV5, PositionType
+from lib.config.parameters import LIVE_TRADING_PARAMS
 
 logger = logging.getLogger("TradingService")
 
@@ -28,13 +29,15 @@ class TradingService:
             raise ValueError("Trading is already running")
         
         try:
-            # Initialize strategy with test_mode enabled for more signals
-            params = strategy_params or {}
-            # Enable test mode for more permissive trading
-            params['test_mode_enabled'] = params.get('test_mode_enabled', True)
-            params['bypass_contradiction_detection'] = params.get('bypass_contradiction_detection', True)
+            # Use LIVE_TRADING_PARAMS as base, then override with any custom params
+            params = LIVE_TRADING_PARAMS.copy()
+            if strategy_params:
+                params.update(strategy_params)
             
-            logger.info(f"🚀 Starting trading with params: test_mode={params.get('test_mode_enabled')}")
+            logger.info(f"🚀 Starting live trading with LIVE_TRADING_PARAMS")
+            logger.info(f"   RSI thresholds: {params.get('rsi_oversold')}/{params.get('rsi_overbought')}")
+            logger.info(f"   Filters: MTF={params.get('enable_mtf')}, Trend={params.get('enable_trend_filter')}")
+            logger.info(f"   Test Mode: {params.get('test_mode_enabled')}")
             
             self.strategy = EnhancedRsiStrategyV5(**params)
             self.active_symbols = [symbol]

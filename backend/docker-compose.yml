@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  db:
+    image: reg.fanofogh.ir/devops/ci-cd:psql-tsdb-br
+    container_name: crypto_db
+    environment:
+      POSTGRES_DB: crypto
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: H@mrah8339!
+    ports:
+      - "${PG_EXPOSED_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: crypto_trading_bot_app
+    environment:
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+      - POSTGRES_USERNAME=postgres
+      - POSTGRES_PASSWORD=H@mrah8339!
+      - POSTGRES_DATABASE=crypto
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

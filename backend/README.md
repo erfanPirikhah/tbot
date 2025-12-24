@@ -55,3 +55,37 @@ FastAPI-based backend for the Intelligent Crypto Trading Bot.
 - `GET /api/config/timeframes` - Supported timeframes
 - `GET /api/config/risk` - Risk configuration
 - `PUT /api/config/risk` - Update risk settings
+
+## Database Setup
+
+The application uses PostgreSQL as its database. The database configuration is managed through environment variables in the `.env` file.
+
+### Environment Variables
+
+The database connection is configured using the following environment variables in the `.env` file:
+
+```env
+POSTGRES_HOST=db
+POSTGRES_PORT=5432
+PG_EXPOSED_PORT=5432
+POSTGRES_USERNAME=postgres
+POSTGRES_PASSWORD=H@mrah8339!
+POSTGRES_DATABASE=crypto
+```
+
+### Docker Setup
+
+The database runs in a Docker container using the image `reg.fanofogh.ir/devops/ci-cd:psql-tsdb-br`. To start the database:
+
+```bash
+docker-compose up -d
+```
+
+### Database Connection
+
+The database connection is handled by SQLAlchemy with the following components:
+
+- `database/database.py`: Contains the main database connection logic
+- `database/models.py`: Defines the database models
+- `init_db.py`: Script to initialize the database tables
+- `test_db_connection.py`: Test script to verify database connectivity
